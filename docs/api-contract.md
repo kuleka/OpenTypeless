@@ -76,9 +76,11 @@ GET /health
 
 ## 3. POST /config — 配置 API Key 与偏好
 
-Client 启动后应立即调用此端点，将用户在客户端 UI 中配置的 API Key 和偏好推送给 Engine。配置保存在 Engine 内存中，Engine 重启后需要重新配置。
+Client 启动后应立即调用此端点，将用户在客户端 UI 中配置的 API 连接信息推送给 Engine。配置保存在 Engine 内存中，Engine 重启后需要重新配置。
 
-**Engine 不从环境变量读取 API Key**，所有密钥必须通过此端点由 Client 提供。
+**Engine 不从环境变量读取 API Key**，所有密钥和连接信息必须通过此端点由 Client 提供。
+
+**Engine 是 provider-agnostic 的**：它不关心背后是 Groq、OpenAI 还是 Deepgram，只要目标 API 兼容 OpenAI 格式即可。具体的 provider 选择和 URL 映射是 Client 侧的 UX 逻辑。
 
 ### Request
 
@@ -89,9 +91,16 @@ Content-Type: application/json
 
 ```json
 {
-  "groq_api_key": "gsk_xxxxxxxxxxxx",
-  "openrouter_api_key": "sk-or-xxxxxxxxxxxx",
-  "default_model": "minimax/minimax-m2.7",
+  "stt": {
+    "api_base": "https://api.groq.com/openai/v1",
+    "api_key": "gsk_xxxxxxxxxxxx",
+    "model": "whisper-large-v3"
+  },
+  "llm": {
+    "api_base": "https://openrouter.ai/api/v1",
+    "api_key": "sk-or-xxxxxxxxxxxx",
+    "model": "minimax/minimax-m2.7"
+  },
   "default_language": "auto"
 }
 ```
@@ -100,10 +109,65 @@ Content-Type: application/json
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
-| `groq_api_key` | string | **是** | — | Groq API Key，用于 STT 转写 |
-| `openrouter_api_key` | string | **是** | — | OpenRouter API Key，用于 LLM 润色 |
-| `default_model` | string | 否 | `"minimax/minimax-m2.7"` | 默认 LLM 模型（可被 `/polish` 请求覆盖） |
+| `stt` | object | **是** | — | STT 服务配置 |
+| `stt.api_base` | string | **是** | — | STT API 的 Base URL（须兼容 OpenAI Whisper 格式） |
+| `stt.api_key` | string | **是** | — | STT 服务的 API Key |
+| `stt.model` | string | **是** | — | STT 模型标识，如 `"whisper-large-v3"` |
+| `llm` | object | **是** | — | LLM 服务配置 |
+| `llm.api_base` | string | **是** | — | LLM API 的 Base URL（须兼容 OpenAI Chat Completions 格式） |
+| `llm.api_key` | string | **是** | — | LLM 服务的 API Key |
+| `llm.model` | string | **是** | — | LLM 模型标识，如 `"minimax/minimax-m2.7"` |
 | `default_language` | string | 否 | `"auto"` | 默认语言（可被 `/polish` 请求覆盖） |
+
+#### 常见 Provider 配置示例
+
+**Groq + OpenRouter**（推荐，性价比高）：
+```json
+{
+  "stt": {
+    "api_base": "https://api.groq.com/openai/v1",
+    "api_key": "gsk_xxx",
+    "model": "whisper-large-v3"
+  },
+  "llm": {
+    "api_base": "https://openrouter.ai/api/v1",
+    "api_key": "sk-or-xxx",
+    "model": "minimax/minimax-m2.7"
+  }
+}
+```
+
+**OpenAI 全家桶**：
+```json
+{
+  "stt": {
+    "api_base": "https://api.openai.com/v1",
+    "api_key": "sk-xxx",
+    "model": "whisper-1"
+  },
+  "llm": {
+    "api_base": "https://api.openai.com/v1",
+    "api_key": "sk-xxx",
+    "model": "gpt-4o-mini"
+  }
+}
+```
+
+**Deepgram STT + 本地 Ollama LLM**：
+```json
+{
+  "stt": {
+    "api_base": "https://api.deepgram.com/v1",
+    "api_key": "dg_xxx",
+    "model": "nova-2"
+  },
+  "llm": {
+    "api_base": "http://localhost:11434/v1",
+    "api_key": "ollama",
+    "model": "llama3"
+  }
+}
+```
 
 ### Response — 200 OK
 
@@ -121,7 +185,7 @@ Content-Type: application/json
 {
   "error": {
     "code": "VALIDATION_ERROR",
-    "message": "Missing required field: groq_api_key"
+    "message": "Missing required field: stt.api_key"
   }
 }
 ```
@@ -143,9 +207,16 @@ GET /config
 ```json
 {
   "configured": true,
-  "groq_api_key": "gsk_****xxxx",
-  "openrouter_api_key": "sk-or-****xxxx",
-  "default_model": "minimax/minimax-m2.7",
+  "stt": {
+    "api_base": "https://api.groq.com/openai/v1",
+    "api_key": "gsk_****xxxx",
+    "model": "whisper-large-v3"
+  },
+  "llm": {
+    "api_base": "https://openrouter.ai/api/v1",
+    "api_key": "sk-or-****xxxx",
+    "model": "minimax/minimax-m2.7"
+  },
   "default_language": "auto"
 }
 ```
@@ -155,14 +226,13 @@ GET /config
 ```json
 {
   "configured": false,
-  "groq_api_key": null,
-  "openrouter_api_key": null,
-  "default_model": "minimax/minimax-m2.7",
+  "stt": null,
+  "llm": null,
   "default_language": "auto"
 }
 ```
 
-> API Key 脱敏规则：仅显示前缀 + 最后 4 位，如 `gsk_****a1b2`
+> API Key 脱敏规则：保留前缀（第一个 `_` 之前的部分）+ `****` + 最后 4 位，如 `gsk_****a1b2`、`sk-or-****c3d4`
 
 ---
 
@@ -203,9 +273,9 @@ Content-Type: application/json
 | `context` | object | 否 | `{}` | 当前 app 上下文，用于场景检测 |
 | `context.app_id` | string | 否 | `""` | macOS bundle ID，如 `"com.apple.mail"` |
 | `context.window_title` | string | 否 | `""` | 当前窗口标题 |
-| `options` | object | 否 | `{}` | 可选配置 |
-| `options.language` | string | 否 | `"auto"` | 语言提示：`"auto"` / `"en"` / `"zh"` 等 |
-| `options.model` | string | 否 | `"minimax/minimax-m2.7"` | OpenRouter 模型标识 |
+| `options` | object | 否 | `{}` | 可选配置，用于覆盖 `/config` 中的默认值 |
+| `options.language` | string | 否 | config 中的 `default_language` | 语言提示：`"auto"` / `"en"` / `"zh"` 等 |
+| `options.model` | string | 否 | config 中的 `llm.model` | 覆盖本次请求使用的 LLM 模型 |
 
 #### 音频要求
 
@@ -348,8 +418,8 @@ Content-Type: application/json
 | **400** | `INVALID_AUDIO` | `audio_base64` 不是合法的 Base64 数据 |
 | **422** | `VALIDATION_ERROR` | 缺少必填字段（如 `audio_base64`）或字段类型错误 |
 | **503** | `NOT_CONFIGURED` | 尚未调用 `POST /config` 配置 API Key，Engine 无法处理请求 |
-| **502** | `STT_FAILURE` | STT 服务（Groq）请求失败或超时 |
-| **502** | `LLM_FAILURE` | LLM 服务（OpenRouter）请求失败或超时 |
+| **502** | `STT_FAILURE` | STT 服务请求失败或超时（30 秒） |
+| **502** | `LLM_FAILURE` | LLM 服务请求失败或超时（30 秒） |
 | **500** | `INTERNAL_ERROR` | Engine 内部未预期的错误 |
 
 ### 错误响应示例
@@ -358,7 +428,7 @@ Content-Type: application/json
 {
   "error": {
     "code": "STT_FAILURE",
-    "message": "Groq API request timed out after 30 seconds"
+    "message": "STT API request to https://api.groq.com/openai/v1 timed out after 30 seconds"
   }
 }
 ```
@@ -406,8 +476,16 @@ Engine 支持 6 种场景，每种场景有不同的润色风格：
 请求：
 ```json
 {
-  "groq_api_key": "gsk_test_key",
-  "openrouter_api_key": "sk-or-test_key"
+  "stt": {
+    "api_base": "https://api.groq.com/openai/v1",
+    "api_key": "gsk_test_key",
+    "model": "whisper-large-v3"
+  },
+  "llm": {
+    "api_base": "https://openrouter.ai/api/v1",
+    "api_key": "sk-or-test_key",
+    "model": "minimax/minimax-m2.7"
+  }
 }
 ```
 
@@ -525,3 +603,4 @@ Client 端需要实现以下模块来对接 Engine：
 |------|------|----------|
 | 2026-03-28 | 1.0.0-draft | 初始版本，基于 OpenSpec Phase 1 规格创建 |
 | 2026-03-28 | 1.1.0-draft | 新增 `POST /config` 和 `GET /config` 端点；API Key 由 Client 通过 `/config` 提供，不再使用环境变量；新增 `503 NOT_CONFIGURED` 错误码 |
+| 2026-03-28 | 1.2.0-draft | Config 改为 provider-agnostic 的 `stt` / `llm` 分组结构；Engine 不绑定任何特定 provider，只要求目标 API 兼容 OpenAI 格式；支持本地模型（如 Ollama） |
