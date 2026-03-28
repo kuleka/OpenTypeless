@@ -1,0 +1,233 @@
+//
+//  ModelDownloadStepView.swift
+//  Pindrop
+//
+//  Created on 2026-01-25.
+//
+
+import SwiftUI
+
+struct ModelDownloadStepView: View {
+    var modelManager: ModelManager
+    var transcriptionService: TranscriptionService
+    let modelName: String
+    let onComplete: () -> Void
+    let onCancel: () -> Void
+
+    @Environment(\.locale) private var locale
+    @State private var downloadError: String?
+    @State private var hasStarted = false
+
+    private var selectedModel: ModelManager.WhisperModel? {
+        modelManager.availableModels.first { $0.name == modelName }
+    }
+
+    var body: some View {
+        VStack(spacing: 32) {
+            Spacer()
+
+            progressIndicator
+
+            statusText
+
+            if downloadError != nil {
+                errorView
+            }
+
+            Spacer()
+
+            actionButtons
+        }
+        .padding(40)
+        .task {
+            await startDownload()
+        }
+    }
+
+    private var progressIndicator: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.secondary.opacity(0.2), lineWidth: 8)
+                .frame(width: 120, height: 120)
+
+            Circle()
+                .trim(from: 0, to: modelManager.downloadProgress)
+                .stroke(
+                    AppColors.accent,
+                    style: StrokeStyle(lineWidth: 8, lineCap: .round)
+                )
+                .frame(width: 120, height: 120)
+                .rotationEffect(.degrees(-90))
+                .animation(.easeInOut(duration: 0.3), value: modelManager.downloadProgress)
+
+            VStack(spacing: 4) {
+                if modelManager.isDownloading {
+                    Text("\(Int(modelManager.downloadProgress * 100))%")
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                } else if downloadError != nil {
+                    IconView(icon: .warning, size: 32)
+                        .foregroundStyle(.orange)
+                } else {
+                    IconView(icon: .circleCheck, size: 32)
+                        .foregroundStyle(.green)
+                }
+            }
+        }
+        .background(AppColors.accent.opacity(0.05))
+        .background(.ultraThinMaterial, in: .circle)
+        .padding(20)
+    }
+
+    private var statusText: some View {
+        VStack(spacing: 8) {
+            Text(statusTitle)
+                .font(.system(size: 20, weight: .semibold, design: .rounded))
+
+            Text(statusSubtitle)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+    }
+
+    private var statusTitle: String {
+        if downloadError != nil {
+            return localized("Download Failed", locale: locale)
+        } else if modelManager.isDownloading {
+            if modelManager.downloadProgress > 0.8 {
+                return localized("Preparing Model...", locale: locale)
+            }
+            return localized("Downloading %@...", locale: locale)
+                .replacingOccurrences(of: "%@", with: selectedModel?.displayName ?? localized("Model", locale: locale))
+        } else {
+            return localized("Download Complete!", locale: locale)
+        }
+    }
+
+    private var statusSubtitle: String {
+        if downloadError != nil {
+            return localized("Please check your internet connection and try again.", locale: locale)
+        } else if modelManager.isDownloading {
+            if let model = selectedModel {
+                let downloadedMB = Int(Double(model.sizeInMB) * modelManager.downloadProgress)
+                return String(
+                    format: localized("%d / %d MB", locale: locale),
+                    locale: locale,
+                    arguments: [downloadedMB, model.sizeInMB]
+                )
+            }
+            return localized("Please wait...", locale: locale)
+        } else {
+            return localized("Your model is ready to use.", locale: locale)
+        }
+    }
+
+    @ViewBuilder
+    private var errorView: some View {
+        if let error = downloadError {
+            Text(error)
+                .font(.caption)
+                .foregroundStyle(.red)
+                .padding()
+                .background(.red.opacity(0.05))
+                .background(.ultraThinMaterial, in: .rect(cornerRadius: 8))
+        }
+    }
+
+    private var actionButtons: some View {
+        HStack(spacing: 16) {
+            if modelManager.isDownloading {
+                Button(localized("Cancel", locale: locale)) {
+                    onCancel()
+                }
+                .buttonStyle(.bordered)
+            } else if downloadError != nil {
+                Button(localized("Go Back", locale: locale)) {
+                    onCancel()
+                }
+                .buttonStyle(.bordered)
+
+                Button(localized("Retry", locale: locale)) {
+                    downloadError = nil
+                    Task { await startDownload() }
+                }
+                .buttonStyle(.borderedProminent)
+            } else {
+                Button(action: onComplete) {
+                    Text(localized("Continue", locale: locale))
+                        .font(.headline)
+                        .frame(maxWidth: 200)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+    }
+
+    private func startDownload() async {
+        guard !hasStarted else { return }
+        hasStarted = true
+        Log.boot.info("ModelDownloadStepView.startDownload task began modelName=\(modelName)")
+
+        // Check if model is already downloaded
+        if modelManager.isModelDownloaded(modelName) {
+            Log.model.info("Model \(modelName) already downloaded, skipping download step")
+            Log.boot.info("Onboarding model download step: model already on disk name=\(modelName) scheduling TranscriptionService.loadModel")
+            Task.detached { @MainActor in
+                do {
+                    try await self.transcriptionService.loadModel(modelName: self.modelName)
+                    Log.boot.info("Onboarding background loadModel finished OK name=\(self.modelName)")
+                } catch {
+                    Log.boot.error("Onboarding background loadModel failed name=\(self.modelName) error=\(error.localizedDescription)")
+                }
+            }
+            try? await Task.sleep(for: .milliseconds(300))
+            onComplete()
+            return
+        }
+
+        do {
+            Log.boot.info("Onboarding model download step: calling ModelManager.downloadModel name=\(modelName)")
+            try await modelManager.downloadModel(named: modelName)
+            Log.boot.info("Onboarding model download step: ModelManager.downloadModel returned scheduling TranscriptionService.loadModel name=\(modelName)")
+
+            Task.detached { @MainActor in
+                do {
+                    try await self.transcriptionService.loadModel(modelName: self.modelName)
+                    Log.boot.info("Onboarding background loadModel finished OK name=\(self.modelName)")
+                } catch {
+                    Log.boot.error("Onboarding background loadModel failed name=\(self.modelName) error=\(error.localizedDescription)")
+                }
+            }
+
+            try? await Task.sleep(for: .milliseconds(300))
+            Log.boot.info("Onboarding model download step: invoking onComplete")
+            onComplete()
+        } catch {
+            Log.boot.error("Onboarding model download step failed name=\(modelName) error=\(error.localizedDescription)")
+            downloadError = error.localizedDescription
+            hasStarted = false
+        }
+    }
+}
+
+#if DEBUG
+struct ModelDownloadStepView_Previews: PreviewProvider {
+    static var previews: some View {
+        ModelDownloadStepView(
+            modelManager: PreviewModelManagerDownload(),
+            transcriptionService: TranscriptionService(),
+            modelName: "openai_whisper-base.en",
+            onComplete: {},
+            onCancel: {}
+        )
+        .frame(width: 800, height: 600)
+    }
+}
+
+final class PreviewModelManagerDownload: ModelManager {
+    override init() {
+        // Skip async initialization to avoid launching WhisperKit in preview
+    }
+}
+#endif
