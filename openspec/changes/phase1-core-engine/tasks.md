@@ -2,7 +2,7 @@
 
 - [ ] 1.1 Create `engine/pyproject.toml` with package metadata, dependencies (fastapi, uvicorn, httpx, pyyaml, pydantic, python-multipart), and dev dependencies (pytest, pytest-asyncio)
 - [ ] 1.2 Create `engine/open_typeless/__init__.py` with version string
-- [ ] 1.3 Create `engine/open_typeless/models.py` with all Pydantic models (AppContext, PolishRequest, PolishResponse, HealthResponse, SceneType, MatchRule, SceneConfig, PromptMessages)
+- [ ] 1.3 Create `engine/open_typeless/models.py` with all Pydantic models (STTConfig, LLMConfig, EngineConfig, AppContext, PolishRequest, PolishResponse, HealthResponse, ConfigRequest, ConfigResponse, SceneType, MatchRule, SceneConfig, PromptMessages)
 - [ ] 1.4 Verify `pip install -e ".[dev]"` succeeds in the engine directory
 
 ## 2. Prompt Templates and Router
@@ -16,29 +16,35 @@
 - [ ] 3.1 Implement `engine/open_typeless/context.py` with `assemble_prompt(scene, raw_transcript) -> PromptMessages` that builds the 3-layer prompt
 - [ ] 3.2 Write `engine/tests/test_context.py` — test correct assembly for each scene type, verify system prompt is always present
 
-## 4. STT Integration
+## 4. Configuration Management
 
-- [ ] 4.1 Implement `engine/open_typeless/stt.py` with async `transcribe()` function calling Groq Whisper API via httpx
-- [ ] 4.2 Write `engine/tests/test_stt.py` — mock Groq API responses, test success, error handling, missing API key, and timeout cases
+- [ ] 4.1 Implement `engine/open_typeless/config.py` with in-memory config store: `set_config(config)`, `get_config()`, `is_configured()`, and `mask_api_key(key)` functions
+- [ ] 4.2 Write `engine/tests/test_config.py` — test config storage, retrieval, configured state check, and API key masking
 
-## 5. LLM Integration
+## 5. STT Integration
 
-- [ ] 5.1 Implement `engine/open_typeless/llm.py` with async `polish()` function calling OpenRouter API via httpx
-- [ ] 5.2 Write `engine/tests/test_llm.py` — mock OpenRouter API responses, test success, error handling, missing API key, and timeout cases
+- [ ] 5.1 Implement `engine/open_typeless/stt.py` with async `transcribe()` function that calls `{stt.api_base}/audio/transcriptions` using the configured api_key and model via httpx (provider-agnostic, any OpenAI Whisper-compatible API)
+- [ ] 5.2 Write `engine/tests/test_stt.py` ��� mock STT API responses, test success, error handling, not-configured state, and timeout cases
 
-## 6. HTTP Server and Full Pipeline
+## 6. LLM Integration
 
-- [ ] 6.1 Implement `engine/open_typeless/server.py` with FastAPI app: `GET /health`, `POST /polish`, `GET /contexts`, `POST /contexts`
-- [ ] 6.2 Wire the full pipeline in `POST /polish`: decode base64 → STT → detect scene → assemble prompt → LLM → return PolishResponse with latency
-- [ ] 6.3 Add error handling for pipeline failures (STT error → 502, LLM error → 502, invalid base64 → 400)
-- [ ] 6.4 Write `engine/tests/test_server.py` — integration tests using FastAPI TestClient with mocked STT/LLM, test all endpoints
+- [ ] 6.1 Implement `engine/open_typeless/llm.py` with async `polish()` function that calls `{llm.api_base}/chat/completions` using the configured api_key and model via httpx (provider-agnostic, any OpenAI Chat Completions-compatible API)
+- [ ] 6.2 Write `engine/tests/test_llm.py` — mock LLM API responses, test success, error handling, not-configured state, per-request model override, and timeout cases
 
-## 7. CLI Entry Point
+## 7. HTTP Server and Full Pipeline
 
-- [ ] 7.1 Implement `engine/open_typeless/cli.py` with `open-typeless serve` command (starts uvicorn) and `--port` flag
-- [ ] 7.2 Add `[project.scripts]` entry in pyproject.toml pointing to CLI
+- [ ] 7.1 Implement `engine/open_typeless/server.py` with FastAPI app: `GET /health`, `POST /config`, `GET /config`, `POST /polish`, `GET /contexts`, `POST /contexts`
+- [ ] 7.2 Wire `POST /config` to store STT/LLM connection info in memory; wire `GET /config` to return masked config
+- [ ] 7.3 Wire the full pipeline in `POST /polish`: check config → decode base64 → STT → detect scene → assemble prompt → LLM → return PolishResponse with latency
+- [ ] 7.4 Add error handling: not configured → 503, STT error → 502, LLM error → 502, invalid base64 → 400
+- [ ] 7.5 Write `engine/tests/test_server.py` — integration tests using FastAPI TestClient with mocked STT/LLM, test all endpoints including /config and 503 when not configured
 
-## 8. End-to-End Verification
+## 8. CLI Entry Point
 
-- [ ] 8.1 Run full test suite with `pytest` — all tests pass
-- [ ] 8.2 Manual verification: start server with `open-typeless serve`, confirm `curl localhost:19823/health` returns 200
+- [ ] 8.1 Implement `engine/open_typeless/cli.py` with `open-typeless serve` command (starts uvicorn) and `--port` flag
+- [ ] 8.2 Add `[project.scripts]` entry in pyproject.toml pointing to CLI
+
+## 9. End-to-End Verification
+
+- [ ] 9.1 Run full test suite with `pytest` — all tests pass
+- [ ] 9.2 Manual verification: start server with `open-typeless serve`, call `POST /config` with test API keys, confirm `POST /polish` returns polished text

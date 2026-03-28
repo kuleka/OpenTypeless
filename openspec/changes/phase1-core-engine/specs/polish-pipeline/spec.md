@@ -41,13 +41,20 @@ The engine SHALL apply sensible defaults for optional fields in the polish reque
 - **THEN** the engine SHALL default to `"wav"`
 
 #### Scenario: Default model
-- **WHEN** `options.model` is not specified
-- **THEN** the engine SHALL default to `"minimax/minimax-m2.7"`
+- **WHEN** `options.model` is not specified in the `/polish` request
+- **THEN** the engine SHALL use the `llm.model` value from `POST /config`
 
 #### Scenario: Default language
 - **WHEN** `options.language` is not specified
-- **THEN** the engine SHALL default to `"auto"`
+- **THEN** the engine SHALL use the `default_language` value from `POST /config` (which itself defaults to `"auto"`)
 
 #### Scenario: Empty app context
 - **WHEN** `context` is not provided or empty
 - **THEN** the engine SHALL use the `default` scene for prompt routing
+
+### Requirement: Configuration prerequisite
+The engine SHALL require `POST /config` to be called before processing any `/polish` request.
+
+#### Scenario: Polish before configuration
+- **WHEN** a POST request is sent to `/polish` before `POST /config` has been called
+- **THEN** the server SHALL return HTTP 503 with error code `NOT_CONFIGURED` and a message indicating that the engine needs to be configured first

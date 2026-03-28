@@ -53,15 +53,16 @@ The engine must be simple, fast to start, and easy to install via `pip`. All hea
 **Alternatives considered**:
 - Multipart form upload from client — more complex client code, marginal benefit for small files
 
-### 4. Configuration: environment variables only
+### 4. Configuration: client-pushed via POST /config
 
-**Choice**: API keys and basic config via env vars (`GROQ_API_KEY`, `OPENROUTER_API_KEY`, `OPEN_TYPELESS_PORT`).
+**Choice**: API keys and service config are pushed from the client via `POST /config` endpoint. The engine is provider-agnostic — it accepts `api_base`, `api_key`, and `model` for both STT and LLM, and talks to any OpenAI-compatible API. Port is still configurable via `OPEN_TYPELESS_PORT` environment variable.
 
-**Why**: Simplest possible setup. No config file to manage. Works everywhere (Docker, systemd, shell).
+**Why**: Users configure API keys in the client UI (dropdown for provider presets + manual input). The client pushes config to the engine on startup. This keeps the engine decoupled from any specific provider and allows swapping between cloud APIs (Groq, OpenAI, Deepgram) and local models (Ollama, LocalAI) without engine changes.
 
 **Alternatives considered**:
-- YAML/TOML config file — overkill for 3-4 settings in Phase 1
-- CLI flags — less convenient for repeated use
+- Environment variables only — doesn't support client UI configuration, ties to specific providers
+- Per-request API keys in headers — works but redundant for every request; config-once is cleaner
+- YAML/TOML config file — doesn't support dynamic client-driven configuration
 
 ### 5. Prompt templates: single YAML file loaded at startup
 
@@ -89,11 +90,11 @@ The engine must be simple, fast to start, and easy to install via `pip`. All hea
 
 ## Risks / Trade-offs
 
-**[Groq API availability]** → If Groq is down, the entire pipeline fails.
-*Mitigation*: Clear error messages. Deepgram fallback can be added later without architectural changes since `stt.py` abstracts the provider.
+**[STT provider availability]** → If the configured STT provider is down, the entire pipeline fails.
+*Mitigation*: Clear error messages with the provider's API base URL. Users can switch to a different provider by updating config via the client UI without restarting the engine.
 
-**[OpenRouter model changes]** → Models may be deprecated or pricing may change.
-*Mitigation*: Model is configurable per request. Default can be updated in `defaults.yaml`.
+**[LLM provider/model changes]** → Models may be deprecated or pricing may change.
+*Mitigation*: Model is configurable per request and via `POST /config`. Users can switch providers and models at any time through the client UI.
 
 **[Base64 audio size]** → Very long recordings (>60s) produce large JSON payloads.
 *Mitigation*: Acceptable for Phase 1. Voice dictation segments are typically 5-30 seconds. Can add multipart upload in Phase 3 if needed.

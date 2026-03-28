@@ -1,22 +1,22 @@
 ## ADDED Requirements
 
-### Requirement: Groq Whisper STT transcription
-The engine SHALL transcribe audio to text using the Groq Whisper API. The API key SHALL be read from `GROQ_API_KEY` environment variable.
+### Requirement: Provider-agnostic STT transcription
+The engine SHALL transcribe audio to text using any OpenAI Whisper-compatible API. The API connection info (`api_base`, `api_key`, `model`) SHALL be provided by the client via `POST /config`.
 
 #### Scenario: Successful transcription
 - **WHEN** valid audio bytes (WAV or M4A) are sent to the STT service
-- **THEN** the service SHALL return the raw transcript text string
+- **THEN** the service SHALL call `{stt.api_base}/audio/transcriptions` with the configured `stt.api_key` and `stt.model`, and return the raw transcript text string
 
-#### Scenario: Missing API key
-- **WHEN** `GROQ_API_KEY` is not set and transcription is requested
-- **THEN** the service SHALL raise a clear error indicating the missing API key
+#### Scenario: Not configured
+- **WHEN** STT config has not been provided via `POST /config` and transcription is requested
+- **THEN** the service SHALL raise a clear error indicating that STT is not configured
 
 #### Scenario: API error
-- **WHEN** the Groq API returns an error response
+- **WHEN** the STT API returns an error response
 - **THEN** the service SHALL raise an `STTError` with the error details
 
 #### Scenario: Request timeout
-- **WHEN** the Groq API does not respond within 30 seconds
+- **WHEN** the STT API does not respond within 30 seconds
 - **THEN** the service SHALL raise an `STTError` indicating timeout
 
 ### Requirement: Auto language detection
@@ -24,8 +24,8 @@ The STT service SHALL support automatic language detection by default, with an o
 
 #### Scenario: Auto-detect language
 - **WHEN** language is set to `"auto"` or not specified
-- **THEN** the service SHALL let Groq auto-detect the spoken language
+- **THEN** the service SHALL omit the language parameter, letting the STT provider auto-detect the spoken language
 
 #### Scenario: Specified language
 - **WHEN** language is set to `"zh"`
-- **THEN** the service SHALL pass the language hint to the Groq API
+- **THEN** the service SHALL pass the language hint to the STT API
