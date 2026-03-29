@@ -67,6 +67,35 @@ final class PindropUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Dark Theme"].waitForExistence(timeout: 2))
     }
 
+    @MainActor
+    func testEngineSettingsFixtureTogglesBetweenLocalAndRemoteSTT() throws {
+        try skipIfTargetAppIsAlreadyRunning()
+
+        let app = configuredApplication(settingsTab: "AI Enhancement")
+        launchedApplication = app
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["Engine & AI"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Engine Connection"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Transcription Mode"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Local STT"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["LLM Provider"].waitForExistence(timeout: 2))
+
+        let remoteToggle = remoteSTTToggle(in: app)
+        XCTAssertTrue(remoteToggle.waitForExistence(timeout: 2))
+        remoteToggle.tap()
+
+        XCTAssertTrue(app.staticTexts["Remote STT Provider"].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.staticTexts["Local STT"].exists)
+
+        let localToggle = localSTTToggle(in: app)
+        XCTAssertTrue(localToggle.waitForExistence(timeout: 2))
+        localToggle.tap()
+
+        XCTAssertTrue(app.staticTexts["Local STT"].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.staticTexts["Remote STT Provider"].exists)
+    }
+
     private func configuredApplication(
         surface: String = "settings",
         settingsTab: String = "General",
@@ -74,6 +103,7 @@ final class PindropUITests: XCTestCase {
         defaultsSuite: String? = nil
     ) -> XCUIApplication {
         let app = XCUIApplication()
+        let resolvedDefaultsSuite = defaultsSuite ?? "tech.watzon.pindrop.ui-tests.\(UUID().uuidString)"
         app.launchEnvironment[testModeKey] = "1"
         app.launchEnvironment[uiTestModeKey] = "1"
         app.launchEnvironment[uiTestSurfaceKey] = surface
@@ -81,10 +111,36 @@ final class PindropUITests: XCTestCase {
         if let searchText {
             app.launchEnvironment[settingsSearchTextKey] = searchText
         }
-        if let defaultsSuite {
-            app.launchEnvironment[defaultsSuiteKey] = defaultsSuite
-        }
+        app.launchEnvironment[defaultsSuiteKey] = resolvedDefaultsSuite
         return app
+    }
+
+    private func remoteSTTToggle(in app: XCUIApplication) -> XCUIElement {
+        let exactButton = app.segmentedControls.buttons["Remote (Engine)"]
+        if exactButton.exists {
+            return exactButton
+        }
+
+        let fallbackButton = app.buttons["Remote (Engine)"]
+        if fallbackButton.exists {
+            return fallbackButton
+        }
+
+        return exactButton
+    }
+
+    private func localSTTToggle(in app: XCUIApplication) -> XCUIElement {
+        let exactButton = app.segmentedControls.buttons["Local"]
+        if exactButton.exists {
+            return exactButton
+        }
+
+        let fallbackButton = app.buttons["Local"]
+        if fallbackButton.exists {
+            return fallbackButton
+        }
+
+        return exactButton
     }
 
     private func skipIfTargetAppIsAlreadyRunning() throws {

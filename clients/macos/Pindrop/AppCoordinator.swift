@@ -390,6 +390,8 @@ final class AppCoordinator {
         modelContext: ModelContext,
         modelContainer: ModelContainer,
         enableSystemHooks: Bool? = nil,
+        transcriptionService: TranscriptionService? = nil,
+        outputManager: OutputManager? = nil,
         engineStartupHandlers: EngineStartupHandlers? = nil,
         polishHandlers: PolishHandlers? = nil,
         toastPresenter: (any ToastPresenting)? = nil
@@ -404,7 +406,7 @@ final class AppCoordinator {
             Log.app.error("Failed to initialize AudioRecorder: \(error)")
             fatalError("Failed to initialize AudioRecorder: \(error)")
         }
-        self.transcriptionService = TranscriptionService(
+        self.transcriptionService = transcriptionService ?? TranscriptionService(
             sttModeProvider: { [resolvedSettingsStore] in
                 resolvedSettingsStore.sttMode
             },
@@ -462,7 +464,7 @@ final class AppCoordinator {
         self.audioRecorder.setPreferredInputDeviceUID(settingsStore.selectedInputDeviceUID)
         
         let initialOutputMode: OutputMode = settingsStore.outputMode == "directInsert" ? .directInsert : .clipboard
-        self.outputManager = OutputManager(outputMode: initialOutputMode)
+        self.outputManager = outputManager ?? OutputManager(outputMode: initialOutputMode)
         self.historyStore = HistoryStore(modelContext: modelContext)
         self.dictionaryStore = DictionaryStore(modelContext: modelContext)
         self.notesStore = NotesStore(modelContext: modelContext, aiEnhancementService: aiEnhancementService, settingsStore: settingsStore)
@@ -2092,16 +2094,13 @@ final class AppCoordinator {
         mediaPauseService.endRecordingSession()
         suspendLiveContextSessionUpdates()
         isProcessing = true
-        var didResetProcessingState = false
 
         statusBarController.setProcessingState()
 
         transitionRecordingIndicatorToProcessing()
 
         defer {
-            if !didResetProcessingState {
-                resetProcessingState()
-            }
+            resetProcessingState()
         }
 
         let audioData: Data
@@ -2133,8 +2132,6 @@ final class AppCoordinator {
             )
         } catch let error as TranscriptionService.TranscriptionError {
             Log.app.error("Transcription failed: \(error)")
-            resetProcessingState()
-            didResetProcessingState = true
             let message = if case .modelNotLoaded = error {
                 "No model loaded. Please download a model in Settings."
             } else {
@@ -2146,8 +2143,6 @@ final class AppCoordinator {
             throw error
         } catch {
             Log.app.error("Transcription failed: \(error)")
-            resetProcessingState()
-            didResetProcessingState = true
             toastService.show(
                 ToastPayload(message: "Transcription failed: \(error.localizedDescription)", style: .error)
             )
@@ -2597,16 +2592,13 @@ final class AppCoordinator {
         mediaPauseService.endRecordingSession()
         suspendLiveContextSessionUpdates()
         isProcessing = true
-        var didResetProcessingState = false
 
         statusBarController.setProcessingState()
 
         transitionRecordingIndicatorToProcessing()
 
         defer {
-            if !didResetProcessingState {
-                resetProcessingState()
-            }
+            resetProcessingState()
         }
 
         do {
@@ -2714,27 +2706,9 @@ final class AppCoordinator {
             throw error
         }
         
-        guard !audioData.isEmpty else {
-            Log.app.warning("No audio data recorded")
-            handleNoSpeechDetected(context: "recording")
-            return
-        }
-        
         let duration = Date().timeIntervalSince(startTime)
-        
-        let diarizationEnabled = Self.shouldUseSpeakerDiarization(
-            diarizationFeatureEnabled: settingsStore.diarizationFeatureEnabled,
-            isStreamingSessionActive: false
-        )
-        Log.app.info("Speaker diarization \(diarizationEnabled ? "enabled" : "disabled") for batch transcription")
-
-        let transcriptionOutput: TranscriptionOutput
         do {
-            transcriptionOutput = try await transcriptionService.transcribe(
-                audioData: audioData,
-                diarizationEnabled: diarizationEnabled,
-                options: TranscriptionOptions(language: settingsStore.selectedAppLanguage)
-            )
+            try await processRecordedAudioData(audioData, duration: duration)
         } catch let error as TranscriptionService.TranscriptionError {
             Log.app.error("Transcription failed: \(error)")
             resetProcessingState()
@@ -2757,6 +2731,26 @@ final class AppCoordinator {
             )
             throw error
         }
+    }
+
+    func processRecordedAudioData(_ audioData: Data, duration: TimeInterval) async throws {
+        guard !audioData.isEmpty else {
+            Log.app.warning("No audio data recorded")
+            handleNoSpeechDetected(context: "recording")
+            return
+        }
+        
+        let diarizationEnabled = Self.shouldUseSpeakerDiarization(
+            diarizationFeatureEnabled: settingsStore.diarizationFeatureEnabled,
+            isStreamingSessionActive: false
+        )
+        Log.app.info("Speaker diarization \(diarizationEnabled ? "enabled" : "disabled") for batch transcription")
+
+        let transcriptionOutput = try await transcriptionService.transcribe(
+            audioData: audioData,
+            diarizationEnabled: diarizationEnabled,
+            options: TranscriptionOptions(language: settingsStore.selectedAppLanguage)
+        )
 
         if diarizationEnabled {
             let segmentCount = transcriptionOutput.diarizedSegments?.count ?? 0
