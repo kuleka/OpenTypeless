@@ -2,7 +2,15 @@
 
 Thank you for your interest in contributing to Pindrop! Whether you're fixing a bug, adding a feature, or improving documentation, your help is welcome and appreciated.
 
-Pindrop is a macOS menu bar dictation app that uses [WhisperKit](https://github.com/argmaxinc/WhisperKit) for fully local, on-device speech-to-text. It's built with Swift and SwiftUI, targets macOS 14+, and has a single external dependency.
+Pindrop is a macOS menu bar dictation app that uses [WhisperKit](https://github.com/argmaxinc/WhisperKit) for fully local, on-device speech-to-text. It's built with Swift and SwiftUI, targets macOS 14+, and uses a small set of pinned Swift package dependencies, including WhisperKit, FluidAudio, and Sparkle.
+
+This repository is also the current OpenTypeless macOS client. The codebase is mid-migration from the original Pindrop architecture toward an `OpenTypeless Client + Engine` split.
+
+Useful references before making changes:
+
+- [OpenTypeless root README](../../README.md)
+- [Engine ↔ Client API contract](../../docs/api-contract.md)
+- [macOS client Phase 1 status](../../docs/macos-client-phase1.md)
 
 ## Table of Contents
 
@@ -63,6 +71,16 @@ brew install swiftlint swiftformat
 For the full build system reference (release builds, DMGs, code signing, notarization), see [BUILD.md](BUILD.md).
 
 ## Development Workflow
+
+### Current Architecture Transition
+
+When working in this repo, assume three layers are currently coexisting:
+
+- original local Pindrop transcription and enhancement flows
+- new Engine HTTP integration pieces such as `EngineClient`, `EngineTranscriptionEngine`, and `PolishService`
+- partially migrated app orchestration still being moved over in phases
+
+Do not assume that a new service is already wired into every app flow.
 
 ### Branch Naming
 
@@ -227,6 +245,32 @@ xcodebuild test -scheme Pindrop -destination 'platform=macOS' \
     -only-testing:PindropTests/AudioRecorderTests/testStartRecordingRequestsPermission
 ```
 
+For current OpenTypeless work, these two direct commands are especially useful:
+
+```bash
+cd clients/macos
+swift test
+```
+
+This runs the lightweight `EngineCore` package tests for the shared Engine support layer.
+
+```bash
+cd clients/macos
+xcodebuild test \
+  -project Pindrop.xcodeproj \
+  -scheme Pindrop \
+  -destination 'platform=macOS' \
+  -derivedDataPath /tmp/OpenTypelessDerivedData \
+  -clonedSourcePackagesDirPath /tmp/OpenTypelessSourcePackages \
+  -only-testing:PindropTests \
+  CODE_SIGNING_ALLOWED=NO \
+  CODE_SIGNING_REQUIRED=NO \
+  CODE_SIGN_IDENTITY='' \
+  DEVELOPMENT_TEAM=''
+```
+
+This is the most reliable full-app test command for the current local setup.
+
 ### Test Isolation
 
 Tests are isolated from user settings. The test plans set `PINDROP_TEST_MODE=1`, which causes `SettingsStore` to use test-only `@AppStorage` and Keychain backends. You don't need to do anything special; just make sure new settings-dependent code respects this flag.
@@ -297,7 +341,8 @@ All business logic lives in `Services/`. Each service is a single-responsibility
 ```
 AppCoordinator.handleToggleRecording()
     → AudioRecorder (capture audio)
-    → TranscriptionService (run WhisperKit)
+    → TranscriptionService (local or remote STT)
+    → PolishService or legacy enhancement flow, depending on migration state
     → OutputManager (clipboard / direct insert)
 ```
 

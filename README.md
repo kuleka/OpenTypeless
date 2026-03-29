@@ -4,15 +4,39 @@ An open-source AI voice dictation tool. Speak naturally, get polished text at yo
 
 OpenTypeless removes filler words, fixes grammar, and adapts tone based on what app you're using (email, chat, code editor, etc.).
 
+## Current State
+
+OpenTypeless is currently being built as:
+
+- a Python Engine that exposes localhost HTTP APIs
+- a macOS client based on the Pindrop codebase
+
+The macOS migration is in progress. The current Phase 1 implementation already includes:
+
+- `EngineClient` for `/health`, `/config`, `/transcribe`, `/polish`
+- dual-mode transcription plumbing: local STT or remote Engine STT
+- `PolishService` for Engine-based text polishing
+
+The full app pipeline and settings UI are still being wired in.
+
+Useful references:
+
+- [Engine ↔ Client API contract](docs/api-contract.md)
+- [macOS client Phase 1 status](docs/macos-client-phase1.md)
+- [macOS client README](clients/macos/README.md)
+
 ## How It Works
 
 ```
-🎙️ Voice Input → ☁️ Cloud STT (Groq Whisper) → 🤖 LLM Polish (OpenRouter) → 📋 Paste at Cursor
+🎙️ Voice Input
+  -> local STT in macOS client OR remote Engine /transcribe
+  -> Engine /polish
+  -> 📋 Paste at Cursor
 ```
 
 1. **Record** — Hold a hotkey to speak
-2. **Transcribe** — Audio is sent to Groq Whisper for fast speech-to-text (~200ms)
-3. **Polish** — Raw transcript is refined by an LLM with scene-aware prompts
+2. **Transcribe** — Audio is transcribed either locally on macOS or remotely through Engine
+3. **Polish** — Raw transcript is refined by Engine with scene-aware prompts
 4. **Paste** — Polished text appears at your cursor position
 
 ## Scene-Aware Polishing
@@ -31,26 +55,23 @@ OpenTypeless detects which app you're using and adjusts its output:
 ## Architecture
 
 ```
-┌─────────────┐       HTTP        ┌──────────────────┐
-│  macOS App   │ ◄──────────────► │   Python Engine   │
-│  (Swift)     │   localhost:19823│   (FastAPI)        │
-└─────────────┘                   └──────────────────┘
-                                    │           │
-                                    ▼           ▼
-                               Groq Whisper  OpenRouter
-                                 (STT)        (LLM)
+┌─────────────────────┐       HTTP        ┌──────────────────┐
+│ macOS Client (Swift)│ ◄──────────────► │ Python Engine     │
+│ recording / hotkeys │   localhost:19823│ STT + polish APIs │
+└─────────────────────┘                  └──────────────────┘
 ```
 
-- **Engine** (Python): HTTP server handling STT + LLM pipeline. Cross-platform.
-- **macOS Client** (Swift): Native app based on [Pindrop](https://github.com/watzon/pindrop). Handles recording, hotkeys, and paste.
+- **Engine**: owns HTTP endpoints and external provider integration
+- **macOS Client**: owns recording, hotkeys, context capture, and output
+- **Boundary**: defined by [`docs/api-contract.md`](docs/api-contract.md)
 
 ## Status
 
 🚧 **Under active development**
 
-- [ ] Phase 1: Core Engine (Python HTTP server + STT + LLM + prompt routing)
-- [ ] Phase 2: macOS Client (Pindrop integration)
-- [ ] Phase 3: Enhancements (style memory, streaming audio, input context)
+- [ ] Phase 1: Core Engine and client integration end-to-end
+- [ ] Phase 2: macOS settings and startup wiring
+- [ ] Phase 3: enhancements and broader UX polish
 
 ## License
 

@@ -98,6 +98,13 @@ public enum AppLanguage: String, CaseIterable, Sendable, Identifiable {
 
 }
 
+enum STTMode: String, CaseIterable, Sendable, Identifiable {
+   case local
+   case remote
+
+   var id: String { rawValue }
+}
+
 @MainActor
 final class SettingsStore: ObservableObject {
 
@@ -118,6 +125,7 @@ final class SettingsStore: ObservableObject {
 
    enum Defaults {
       static let selectedModel = "openai_whisper-base"
+      static let sttMode = STTMode.local.rawValue
        static let outputMode = "clipboard"
        static let selectedLanguage = AppLanguage.automatic.rawValue
        static let themeMode = PindropThemeMode.system.rawValue
@@ -225,6 +233,8 @@ final class SettingsStore: ObservableObject {
    var automaticDictionaryLearningEnabled: Bool = Defaults.automaticDictionaryLearningEnabled
    @AppStorage("selectedInputDeviceUID", store: SettingsStoreRuntime.appStorageStore)
    var selectedInputDeviceUID: String = Defaults.selectedInputDeviceUID
+   @AppStorage("sttMode", store: SettingsStoreRuntime.appStorageStore)
+   private var sttModeStorage: String = Defaults.sttMode
    @AppStorage("aiEnhancementEnabled", store: SettingsStoreRuntime.appStorageStore)
    var aiEnhancementEnabled: Bool = false
    @AppStorage("aiProvider", store: SettingsStoreRuntime.appStorageStore)
@@ -357,6 +367,11 @@ final class SettingsStore: ObservableObject {
     var selectedThemeMode: PindropThemeMode {
        get { PindropThemeMode(rawValue: themeMode) ?? .system }
        set { themeMode = newValue.rawValue }
+    }
+
+    var sttMode: STTMode {
+       get { STTMode(rawValue: sttModeStorage) ?? .local }
+       set { sttModeStorage = newValue.rawValue }
     }
 
     var selectedAppLanguage: AppLanguage {
@@ -726,6 +741,7 @@ final class SettingsStore: ObservableObject {
       outputMode = Defaults.outputMode
       selectedLanguage = Defaults.selectedLanguage
       selectedInputDeviceUID = Defaults.selectedInputDeviceUID
+      sttMode = .local
       aiEnhancementEnabled = false
       aiProvider = AIProvider.openai.rawValue
       customLocalProviderType = CustomProviderType.custom.rawValue

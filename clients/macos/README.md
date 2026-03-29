@@ -1,5 +1,7 @@
 # Pindrop 🎤
 
+> This directory is the OpenTypeless macOS client, currently evolving from the upstream Pindrop app into a thin client for the local OpenTypeless Engine.
+
 > The only 100% open source, truly Mac-native AI dictation app
 
 [![GitHub stars](https://img.shields.io/github/stars/watzon/pindrop?style=flat-square)](https://github.com/watzon/pindrop/stargazers)
@@ -12,6 +14,50 @@
 **Pindrop** is a menu bar dictation app for macOS that turns your speech into text—completely offline, completely private. Built with pure Swift/SwiftUI and powered by WhisperKit for optimal Apple Silicon performance.
 
 **[Download Latest Release](https://github.com/watzon/pindrop/releases)** · **[Documentation](#documentation)** · **[Contributing](#contributing)** · **[Community](#community)**
+
+---
+
+## OpenTypeless Migration Status
+
+This codebase is no longer just "plain Pindrop". It is the macOS client used by OpenTypeless.
+
+Current migration status:
+
+- local transcription remains intact
+- remote STT integration exists at the service layer
+- Engine-based polish integration exists at the service layer
+- full AppCoordinator wiring and Engine settings UI are still in progress
+
+Useful references:
+
+- [OpenTypeless root README](../../README.md)
+- [Engine ↔ Client API contract](../../docs/api-contract.md)
+- [macOS client Phase 1 status](../../docs/macos-client-phase1.md)
+
+## Current Phase 1 Architecture
+
+The Phase 1 target pipeline is:
+
+```text
+record audio
+  -> TranscriptionService
+  -> local engine OR EngineTranscriptionEngine
+  -> transcript text
+  -> PolishService
+  -> Engine /polish
+  -> output
+```
+
+Key pieces already in the repo:
+
+- `Pindrop/Services/EngineSupport/EngineClient.swift`
+- `Pindrop/Services/Transcription/EngineTranscriptionEngine.swift`
+- `Pindrop/Services/TranscriptionService.swift`
+- `Pindrop/Services/PolishService.swift`
+
+Legacy note:
+
+- `AIEnhancementService` still exists because some higher-level app flows have not been migrated yet.
 
 ---
 
@@ -66,8 +112,10 @@ While other dictation apps compromise on privacy, performance, or platform fidel
 - **[Swift](https://swift.org/)** — Apple's modern, fast, and safe programming language
 - **[SwiftUI](https://developer.apple.com/swiftui/)** — Declarative UI framework for truly native Mac apps
 - **[WhisperKit](https://www.argmaxinc.com/whisperkit)** — High-performance Core ML implementation of OpenAI Whisper by Argmax, Inc.
+- **[FluidAudio](https://github.com/FluidInference/FluidAudio)** — Parakeet-based transcription, streaming, and diarization backends
+- **[Sparkle](https://sparkle-project.org/)** — Native macOS auto-update framework
 - **[SwiftData](https://developer.apple.com/documentation/swiftdata)** — Modern data persistence framework
-- **Just one external dependency** — WhisperKit. Everything else is Apple's first-party frameworks.
+- **Direct package dependencies are pinned to tested releases** — See `Package.resolved` for the exact versions used by this project.
 
 ## Requirements
 
@@ -120,6 +168,32 @@ Or simply double-click `Pindrop.xcodeproj` in Finder.
 3. The app will compile and launch
 
 After the first build, Pindrop will appear in your menu bar (look for the microphone icon). The app runs exclusively in the menu bar—no dock icon.
+
+### Recommended Test Commands For Current OpenTypeless Work
+
+Fast isolated Engine-core tests:
+
+```bash
+cd clients/macos
+swift test
+```
+
+Full macOS app tests:
+
+```bash
+cd clients/macos
+xcodebuild test \
+  -project Pindrop.xcodeproj \
+  -scheme Pindrop \
+  -destination 'platform=macOS' \
+  -derivedDataPath /tmp/OpenTypelessDerivedData \
+  -clonedSourcePackagesDirPath /tmp/OpenTypelessSourcePackages \
+  -only-testing:PindropTests \
+  CODE_SIGNING_ALLOWED=NO \
+  CODE_SIGNING_REQUIRED=NO \
+  CODE_SIGN_IDENTITY='' \
+  DEVELOPMENT_TEAM=''
+```
 
 ### Using the Build System (Recommended)
 

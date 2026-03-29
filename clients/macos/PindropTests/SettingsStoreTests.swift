@@ -51,6 +51,9 @@ struct SettingsStoreTests {
         settingsStore.selectedAppLanguage = .simplifiedChinese
         #expect(settingsStore.selectedAppLanguage == .simplifiedChinese)
 
+        settingsStore.sttMode = .remote
+        #expect(settingsStore.sttMode == .remote)
+
         settingsStore.aiEnhancementEnabled = true
         #expect(settingsStore.aiEnhancementEnabled)
 
@@ -63,6 +66,7 @@ struct SettingsStoreTests {
         #expect(newStore.pushToTalkHotkey == "⌘⇧B")
         #expect(newStore.outputMode == "directInsert")
         #expect(newStore.selectedAppLanguage == .simplifiedChinese)
+        #expect(newStore.sttMode == .remote)
         #expect(newStore.aiEnhancementEnabled)
 
         settingsStore.selectedModel = "base"
@@ -180,6 +184,7 @@ struct SettingsStoreTests {
         #expect(store.pushToTalkHotkey == SettingsStore.Defaults.Hotkeys.pushToTalkHotkey)
         #expect(store.outputMode == "clipboard")
         #expect(store.selectedAppLanguage == .automatic)
+        #expect(store.sttMode == .local)
         #expect(!store.aiEnhancementEnabled)
         #expect(store.floatingIndicatorEnabled)
         #expect(store.floatingIndicatorType == FloatingIndicatorType.pill.rawValue)
@@ -205,6 +210,18 @@ struct SettingsStoreTests {
 
         #expect(settingsStore.selectedLanguage == AppLanguage.german.rawValue)
         #expect(settingsStore.selectedAppLanguage == .german)
+    }
+
+    @Test func testSTTModeBridgesStoredValue() {
+        let settingsStore = makeSettingsStore()
+        defer { cleanup(settingsStore) }
+
+        settingsStore.sttMode = .remote
+
+        #expect(settingsStore.sttMode == .remote)
+
+        let newStore = SettingsStore()
+        #expect(newStore.sttMode == .remote)
     }
 
     @Test func testLocalizedResolvesSelectedLocaleStrings() {
@@ -262,6 +279,16 @@ struct SettingsStoreTests {
         #expect(settingsStore.selectedThemeMode == .system)
         #expect(settingsStore.lightThemePresetID == SettingsStore.Defaults.lightThemePresetID)
         #expect(settingsStore.darkThemePresetID == SettingsStore.Defaults.darkThemePresetID)
+    }
+
+    @Test func testResetAllSettingsResetsSTTMode() {
+        let settingsStore = makeSettingsStore()
+        defer { cleanup(settingsStore) }
+
+        settingsStore.sttMode = .remote
+        settingsStore.resetAllSettings()
+
+        #expect(settingsStore.sttMode == .local)
     }
 
     @Test func testSelectedFloatingIndicatorTypeBridgesStoredValue() {
