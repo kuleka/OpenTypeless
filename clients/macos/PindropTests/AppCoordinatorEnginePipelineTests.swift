@@ -113,38 +113,56 @@ struct AppCoordinatorEnginePipelineTests {
         return coordinator
     }
 
-    @Test func startupSyncPushesLLMConfigAndPreservesExistingSTTConfig() async throws {
+    @Test func startupSyncPushesCurrentEngineProviderConfiguration() async throws {
         let mockEngineClient = MockEngineStartupClient()
-        mockEngineClient.fetchConfigResponse = ConfigResponse(
-            configured: true,
-            stt: ProviderConfiguration(
-                apiBase: "https://api.groq.com/openai/v1",
-                apiKey: "gsk_****1234",
-                model: "whisper-large-v3"
-            ),
-            llm: nil,
-            defaultLanguage: "auto"
-        )
 
         let coordinator = try makeCoordinator(
             engineStartupHandlers: mockEngineClient.handlers()
         )
 
-        try coordinator.settingsStore.saveAPIEndpoint("https://openrouter.ai/api/v1")
-        try coordinator.settingsStore.saveAPIKey("sk-or-test", for: .openrouter)
-        coordinator.settingsStore.aiModel = "openai/gpt-4o-mini"
+        coordinator.settingsStore.selectedEngineSTTProvider = .groq
+        coordinator.settingsStore.engineSTTAPIBase = "https://api.groq.com/openai/v1"
+        coordinator.settingsStore.engineSTTModel = "whisper-large-v3"
+        try coordinator.settingsStore.saveEngineSTTAPIKey("gsk-test-stt")
+        coordinator.settingsStore.selectedEngineLLMProvider = .openRouter
+        coordinator.settingsStore.engineLLMAPIBase = "https://openrouter.ai/api/v1"
+        coordinator.settingsStore.engineLLMModel = "openai/gpt-4o-mini"
+        try coordinator.settingsStore.saveEngineLLMAPIKey("sk-or-test")
         coordinator.settingsStore.selectedAppLanguage = .english
 
         await coordinator.syncEngineConfigurationOnStartup()
 
         #expect(mockEngineClient.healthCallCount == 1)
-        #expect(mockEngineClient.fetchConfigCallCount == 1)
+        #expect(mockEngineClient.fetchConfigCallCount == 0)
         #expect(mockEngineClient.pushConfigCallCount == 1)
         #expect(mockEngineClient.lastPushedConfig?.stt?.model == "whisper-large-v3")
         #expect(mockEngineClient.lastPushedConfig?.llm?.apiBase == "https://openrouter.ai/api/v1")
         #expect(mockEngineClient.lastPushedConfig?.llm?.apiKey == "sk-or-test")
         #expect(mockEngineClient.lastPushedConfig?.llm?.model == "openai/gpt-4o-mini")
         #expect(mockEngineClient.lastPushedConfig?.defaultLanguage == "en")
+
+        coordinator.cleanup()
+    }
+
+    @Test func settingsChangePushesUpdatedEngineConfig() async throws {
+        let mockEngineClient = MockEngineStartupClient()
+        let coordinator = try makeCoordinator(
+            engineStartupHandlers: mockEngineClient.handlers()
+        )
+
+        coordinator.settingsStore.engineLLMAPIBase = "https://openrouter.ai/api/v1"
+        coordinator.settingsStore.engineLLMModel = "openai/gpt-4o-mini"
+        try coordinator.settingsStore.saveEngineLLMAPIKey("sk-or-live")
+        coordinator.settingsStore.engineSTTAPIBase = "https://api.groq.com/openai/v1"
+        coordinator.settingsStore.engineSTTModel = "whisper-large-v3"
+        try coordinator.settingsStore.saveEngineSTTAPIKey("gsk-live")
+
+        try await Task.sleep(for: .milliseconds(700))
+
+        #expect(mockEngineClient.healthCallCount == 1)
+        #expect(mockEngineClient.pushConfigCallCount == 1)
+        #expect(mockEngineClient.lastPushedConfig?.llm?.apiKey == "sk-or-live")
+        #expect(mockEngineClient.lastPushedConfig?.stt?.apiKey == "gsk-live")
 
         coordinator.cleanup()
     }
@@ -156,6 +174,9 @@ struct AppCoordinatorEnginePipelineTests {
         let coordinator = try makeCoordinator(
             engineStartupHandlers: mockEngineClient.handlers()
         )
+        coordinator.settingsStore.engineLLMAPIBase = "https://openrouter.ai/api/v1"
+        coordinator.settingsStore.engineLLMModel = "openai/gpt-4o-mini"
+        try coordinator.settingsStore.saveEngineLLMAPIKey("sk-or-test")
 
         await coordinator.syncEngineConfigurationOnStartup()
 

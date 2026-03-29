@@ -31,13 +31,13 @@
 
 ## 5. Settings UI — 设置界面改造
 
-- [ ] 5.1 在 `SettingsStore` 新增 Engine 配置属性（host、port、stt provider、llm provider 的 api_base/api_key/model）
-- [ ] 5.2 实现 API key Keychain 存储（STT key、LLM key）
-- [ ] 5.3 创建 Engine 连接设置 UI（host、port、连接状态指示）
-- [ ] 5.4 创建 STT 模式选择 UI（Local / Remote 切换，联动显示对应配置项）
-- [ ] 5.5 创建 STT provider 配置 UI（api_base、api_key、model，含 Groq/OpenAI/Deepgram 预设下拉）
-- [ ] 5.6 创建 LLM provider 配置 UI（api_base、api_key、model，含 OpenRouter/OpenAI/Ollama 预设下拉）
-- [ ] 5.7 实现配置变更时自动推送 `POST /config` 到 Engine
+- [x] 5.1 在 `SettingsStore` 新增 Engine 配置属性（host、port、stt provider、llm provider 的 api_base/api_key/model）
+- [x] 5.2 实现 API key Keychain 存储（STT key、LLM key）
+- [x] 5.3 创建 Engine 连接设置 UI（host、port、连接状态指示）
+- [x] 5.4 创建 STT 模式选择 UI（Local / Remote 切换，联动显示对应配置项）
+- [x] 5.5 创建 STT provider 配置 UI（api_base、api_key、model，含 Groq/OpenAI/Deepgram 预设下拉）
+- [x] 5.6 创建 LLM provider 配置 UI（api_base、api_key、model，含 OpenRouter/OpenAI/Ollama 预设下拉）
+- [x] 5.7 实现配置变更时自动推送 `POST /config` 到 Engine
 
 ## 6. 集成测试与验收
 

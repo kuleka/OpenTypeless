@@ -96,7 +96,12 @@ class TranscriptionService {
             SettingsStore().sttMode
         },
         remoteEngineFactory: @escaping @MainActor () -> any TranscriptionEngine = {
-            EngineTranscriptionEngine()
+            let settings = SettingsStore()
+            let client = EngineClient(
+                host: settings.engineHost,
+                port: settings.enginePort
+            )
+            return EngineTranscriptionEngine(client: client)
         }
     ) {
         self.engineFactory = engineFactory

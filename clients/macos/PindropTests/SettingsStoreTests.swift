@@ -53,6 +53,14 @@ struct SettingsStoreTests {
 
         settingsStore.sttMode = .remote
         #expect(settingsStore.sttMode == .remote)
+        settingsStore.engineHost = "192.168.1.8"
+        settingsStore.enginePort = 19824
+        settingsStore.selectedEngineSTTProvider = .deepgram
+        settingsStore.engineSTTAPIBase = "https://api.deepgram.com/v1"
+        settingsStore.engineSTTModel = "nova-2"
+        settingsStore.selectedEngineLLMProvider = .ollama
+        settingsStore.engineLLMAPIBase = "http://localhost:11434/v1"
+        settingsStore.engineLLMModel = "llama3.2"
 
         settingsStore.aiEnhancementEnabled = true
         #expect(settingsStore.aiEnhancementEnabled)
@@ -67,6 +75,14 @@ struct SettingsStoreTests {
         #expect(newStore.outputMode == "directInsert")
         #expect(newStore.selectedAppLanguage == .simplifiedChinese)
         #expect(newStore.sttMode == .remote)
+        #expect(newStore.engineHost == "192.168.1.8")
+        #expect(newStore.enginePort == 19824)
+        #expect(newStore.selectedEngineSTTProvider == .deepgram)
+        #expect(newStore.engineSTTAPIBase == "https://api.deepgram.com/v1")
+        #expect(newStore.engineSTTModel == "nova-2")
+        #expect(newStore.selectedEngineLLMProvider == .ollama)
+        #expect(newStore.engineLLMAPIBase == "http://localhost:11434/v1")
+        #expect(newStore.engineLLMModel == "llama3.2")
         #expect(newStore.aiEnhancementEnabled)
 
         settingsStore.selectedModel = "base"
@@ -122,6 +138,74 @@ struct SettingsStoreTests {
         let newStore = SettingsStore()
         #expect(newStore.apiEndpoint == "https://api.different.com/v2")
         #expect(newStore.apiKey == "key-67890")
+    }
+
+    @Test func testEngineCredentialsAreStoredPerRoleInKeychain() throws {
+        let settingsStore = makeSettingsStore()
+        defer { cleanup(settingsStore) }
+
+        settingsStore.selectedEngineSTTProvider = .groq
+        settingsStore.selectedEngineLLMProvider = .openRouter
+
+        try settingsStore.saveEngineSTTAPIKey("gsk-test-stt")
+        try settingsStore.saveEngineLLMAPIKey("sk-or-test-llm")
+
+        #expect(settingsStore.loadEngineSTTAPIKey() == "gsk-test-stt")
+        #expect(settingsStore.loadEngineLLMAPIKey() == "sk-or-test-llm")
+
+        let newStore = SettingsStore()
+        newStore.selectedEngineSTTProvider = .groq
+        newStore.selectedEngineLLMProvider = .openRouter
+        #expect(newStore.loadEngineSTTAPIKey() == "gsk-test-stt")
+        #expect(newStore.loadEngineLLMAPIKey() == "sk-or-test-llm")
+    }
+
+    @Test func testEngineProviderConfigurationsRequireCompleteSettings() throws {
+        let settingsStore = makeSettingsStore()
+        defer { cleanup(settingsStore) }
+
+        #expect(settingsStore.currentEngineSTTProviderConfiguration() == nil)
+        #expect(settingsStore.currentEngineLLMProviderConfiguration() == nil)
+
+        settingsStore.engineSTTAPIBase = "https://api.groq.com/openai/v1"
+        settingsStore.engineSTTModel = "whisper-large-v3"
+        try settingsStore.saveEngineSTTAPIKey("gsk-test")
+
+        settingsStore.engineLLMAPIBase = "https://openrouter.ai/api/v1"
+        settingsStore.engineLLMModel = "openai/gpt-4o-mini"
+        try settingsStore.saveEngineLLMAPIKey("sk-or-test")
+
+        #expect(
+            settingsStore.currentEngineSTTProviderConfiguration() == ProviderConfiguration(
+                apiBase: "https://api.groq.com/openai/v1",
+                apiKey: "gsk-test",
+                model: "whisper-large-v3"
+            )
+        )
+        #expect(
+            settingsStore.currentEngineLLMProviderConfiguration() == ProviderConfiguration(
+                apiBase: "https://openrouter.ai/api/v1",
+                apiKey: "sk-or-test",
+                model: "openai/gpt-4o-mini"
+            )
+        )
+    }
+
+    @Test func testResetAllSettingsClearsEngineCredentials() throws {
+        let settingsStore = makeSettingsStore()
+        defer { cleanup(settingsStore) }
+
+        try settingsStore.saveEngineSTTAPIKey("gsk-test")
+        try settingsStore.saveEngineLLMAPIKey("sk-or-test")
+
+        settingsStore.resetAllSettings()
+
+        #expect(settingsStore.loadEngineSTTAPIKey() == nil)
+        #expect(settingsStore.loadEngineLLMAPIKey() == nil)
+        #expect(settingsStore.engineHost == SettingsStore.Defaults.engineHost)
+        #expect(settingsStore.enginePort == SettingsStore.Defaults.enginePort)
+        #expect(settingsStore.selectedEngineSTTProvider == .groq)
+        #expect(settingsStore.selectedEngineLLMProvider == .openRouter)
     }
 
     @Test func testCustomLocalProviderIsInferredFromOllamaEndpoint() throws {
@@ -185,6 +269,14 @@ struct SettingsStoreTests {
         #expect(store.outputMode == "clipboard")
         #expect(store.selectedAppLanguage == .automatic)
         #expect(store.sttMode == .local)
+        #expect(store.engineHost == SettingsStore.Defaults.engineHost)
+        #expect(store.enginePort == SettingsStore.Defaults.enginePort)
+        #expect(store.selectedEngineSTTProvider == .groq)
+        #expect(store.engineSTTAPIBase == SettingsStore.Defaults.engineSTTAPIBase)
+        #expect(store.engineSTTModel == SettingsStore.Defaults.engineSTTModel)
+        #expect(store.selectedEngineLLMProvider == .openRouter)
+        #expect(store.engineLLMAPIBase == SettingsStore.Defaults.engineLLMAPIBase)
+        #expect(store.engineLLMModel == SettingsStore.Defaults.engineLLMModel)
         #expect(!store.aiEnhancementEnabled)
         #expect(store.floatingIndicatorEnabled)
         #expect(store.floatingIndicatorType == FloatingIndicatorType.pill.rawValue)

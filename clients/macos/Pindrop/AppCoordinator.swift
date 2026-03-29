@@ -154,6 +154,22 @@ struct HotkeySettingsSnapshot: Equatable {
     let quickCaptureToggle: HotkeyBindingSnapshot
 }
 
+struct EngineProviderSettingsSnapshot: Equatable {
+    let provider: String
+    let apiBase: String
+    let model: String
+    let apiKey: String?
+}
+
+struct EngineSettingsSnapshot: Equatable {
+    let host: String
+    let port: Int
+    let sttMode: STTMode
+    let defaultLanguage: AppLanguage
+    let stt: EngineProviderSettingsSnapshot
+    let llm: EngineProviderSettingsSnapshot
+}
+
 struct SettingsObservationSnapshot: Equatable {
     let outputMode: String
     let automaticDictionaryLearningEnabled: Bool
@@ -165,6 +181,7 @@ struct SettingsObservationSnapshot: Equatable {
     let enableUIContext: Bool
     let vibeLiveSessionEnabled: Bool
     let hotkeys: HotkeySettingsSnapshot
+    let engine: EngineSettingsSnapshot
 }
 
 @MainActor
@@ -264,8 +281,6 @@ final class AppCoordinator {
     let audioRecorder: AudioRecorder
     let transcriptionService: TranscriptionService
     let modelManager: ModelManager
-    let engineClient: EngineClient
-    let polishService: PolishService
     let aiEnhancementService: AIEnhancementService
     let hotkeyManager: HotkeyManager
     let launchAtLoginManager: LaunchAtLoginManager
@@ -362,6 +377,7 @@ final class AppCoordinator {
     private var modifierEventTapRecoveryTask: Task<Void, Never>?
     private var lastEscapeTime: Date?
     private var lastEscapeSignalTime: Date?
+    private var engineConfigSyncTask: Task<Void, Never>?
     private let doubleEscapeThreshold: TimeInterval = 0.4
     private let duplicateEscapeSignalThreshold: TimeInterval = 0.08
     private let eventTapRecoveryDelay: Duration = .milliseconds(250)
@@ -379,8 +395,7 @@ final class AppCoordinator {
         toastPresenter: (any ToastPresenting)? = nil
     ) {
         self.enableSystemHooks = enableSystemHooks ?? !Self.isRunningTests
-        let resolvedEngineClient = EngineClient()
-        let resolvedPolishService = PolishService(client: resolvedEngineClient)
+        let resolvedSettingsStore = SettingsStore()
         let resolvedToastWindowController = ToastWindowController()
         self.permissionManager = PermissionManager()
         do {
@@ -389,29 +404,54 @@ final class AppCoordinator {
             Log.app.error("Failed to initialize AudioRecorder: \(error)")
             fatalError("Failed to initialize AudioRecorder: \(error)")
         }
-        self.transcriptionService = TranscriptionService()
+        self.transcriptionService = TranscriptionService(
+            sttModeProvider: { [resolvedSettingsStore] in
+                resolvedSettingsStore.sttMode
+            },
+            remoteEngineFactory: { [resolvedSettingsStore] in
+                EngineTranscriptionEngine(
+                    client: EngineClient(
+                        host: resolvedSettingsStore.engineHost,
+                        port: resolvedSettingsStore.enginePort
+                    )
+                )
+            }
+        )
         self.modelManager = ModelManager()
-        self.engineClient = resolvedEngineClient
-        self.polishService = resolvedPolishService
         self.aiEnhancementService = AIEnhancementService()
         self.hotkeyManager = HotkeyManager()
         self.launchAtLoginManager = LaunchAtLoginManager()
         self.updateService = UpdateService()
-        self.settingsStore = SettingsStore()
+        self.settingsStore = resolvedSettingsStore
         self.engineStartupHandlers = engineStartupHandlers ?? EngineStartupHandlers(
-            health: { [resolvedEngineClient] in
-                try await resolvedEngineClient.health()
+            health: { [resolvedSettingsStore] in
+                try await EngineClient(
+                    host: resolvedSettingsStore.engineHost,
+                    port: resolvedSettingsStore.enginePort
+                ).health()
             },
-            fetchConfig: { [resolvedEngineClient] in
-                try await resolvedEngineClient.fetchConfig()
+            fetchConfig: { [resolvedSettingsStore] in
+                try await EngineClient(
+                    host: resolvedSettingsStore.engineHost,
+                    port: resolvedSettingsStore.enginePort
+                ).fetchConfig()
             },
-            pushConfig: { [resolvedEngineClient] requestBody in
-                try await resolvedEngineClient.pushConfig(requestBody)
+            pushConfig: { [resolvedSettingsStore] requestBody in
+                try await EngineClient(
+                    host: resolvedSettingsStore.engineHost,
+                    port: resolvedSettingsStore.enginePort
+                ).pushConfig(requestBody)
             }
         )
         self.polishHandlers = polishHandlers ?? PolishHandlers(
-            polish: { [resolvedPolishService] text, appContext, task, outputLanguage in
-                try await resolvedPolishService.polish(
+            polish: { [resolvedSettingsStore] text, appContext, task, outputLanguage in
+                let service = PolishService(
+                    client: EngineClient(
+                        host: resolvedSettingsStore.engineHost,
+                        port: resolvedSettingsStore.enginePort
+                    )
+                )
+                return try await service.polish(
                     text: text,
                     appContext: appContext,
                     task: task,
@@ -729,6 +769,11 @@ final class AppCoordinator {
     }
 
     func syncEngineConfigurationOnStartup() async {
+        guard let requestBody = currentEngineConfigRequest() else {
+            Log.boot.info("Skipping Engine config push because local Engine settings are incomplete")
+            return
+        }
+
         do {
             _ = try await engineStartupHandlers.health()
         } catch let error as EngineClientError {
@@ -743,18 +788,7 @@ final class AppCoordinator {
             return
         }
 
-        guard let llmConfiguration = currentLLMProviderConfiguration() else {
-            Log.boot.info("Skipping Engine config push because no local LLM provider configuration is available yet")
-            return
-        }
-
         do {
-            let existingConfig = try await engineStartupHandlers.fetchConfig()
-            let requestBody = ConfigRequest(
-                stt: existingConfig.stt,
-                llm: llmConfiguration,
-                defaultLanguage: Self.engineDefaultLanguageCode(for: settingsStore.selectedAppLanguage)
-            )
             _ = try await engineStartupHandlers.pushConfig(requestBody)
             Log.boot.info("Engine config synchronized on startup")
         } catch let error as EngineClientError {
@@ -792,7 +826,7 @@ final class AppCoordinator {
             return RecordingPolishOutcome(
                 finalText: result.text,
                 originalText: result.rawTranscript,
-                enhancedWithModel: result.usedFallback ? nil : (result.modelUsed ?? settingsStore.aiModel),
+                enhancedWithModel: result.usedFallback ? nil : (result.modelUsed ?? settingsStore.engineLLMModel),
                 didAttemptPolish: true,
                 usedFallback: result.usedFallback
             )
@@ -833,24 +867,43 @@ final class AppCoordinator {
         language.whisperLanguageCode ?? language.rawValue
     }
 
-    private func currentLLMProviderConfiguration() -> ProviderConfiguration? {
-        guard let apiBase = settingsStore.apiEndpoint?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !apiBase.isEmpty,
-              let apiKey = settingsStore.configuredAPIKeyForCurrentAIProvider()?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !apiKey.isEmpty else {
+    private func currentEngineConfigRequest() -> ConfigRequest? {
+        guard let llmConfiguration = settingsStore.currentEngineLLMProviderConfiguration() else {
             return nil
         }
 
-        let model = settingsStore.aiModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !model.isEmpty else {
-            return nil
-        }
-
-        return ProviderConfiguration(
-            apiBase: apiBase,
-            apiKey: apiKey,
-            model: model
+        return ConfigRequest(
+            stt: settingsStore.currentEngineSTTProviderConfiguration(),
+            llm: llmConfiguration,
+            defaultLanguage: Self.engineDefaultLanguageCode(for: settingsStore.selectedAppLanguage)
         )
+    }
+
+    private func scheduleEngineConfigurationSync() {
+        engineConfigSyncTask?.cancel()
+        engineConfigSyncTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(350))
+            guard let self, !Task.isCancelled else { return }
+            await self.pushCurrentEngineConfigurationIfPossible()
+        }
+    }
+
+    private func pushCurrentEngineConfigurationIfPossible() async {
+        guard let requestBody = currentEngineConfigRequest() else { return }
+
+        do {
+            _ = try await engineStartupHandlers.health()
+            _ = try await engineStartupHandlers.pushConfig(requestBody)
+            Log.boot.info("Engine config synchronized after local settings change")
+        } catch let error as EngineClientError {
+            if error == .connectionFailed {
+                Log.boot.info("Engine unavailable while applying local config changes; will retry on next successful startup sync")
+            } else {
+                Log.boot.warning("Engine config synchronization after settings change failed: \(error.localizedDescription)")
+            }
+        } catch {
+            Log.boot.warning("Engine config synchronization after settings change failed: \(error.localizedDescription)")
+        }
     }
 
     private func polishFallbackMessage(for warningMessage: String?) -> String {
@@ -1332,6 +1385,27 @@ final class AppCoordinator {
     }
     
     // MARK: - Settings Observation
+
+    private func currentEngineObservationSnapshot() -> EngineSettingsSnapshot {
+        EngineSettingsSnapshot(
+            host: settingsStore.engineHost,
+            port: settingsStore.enginePort,
+            sttMode: settingsStore.sttMode,
+            defaultLanguage: settingsStore.selectedAppLanguage,
+            stt: EngineProviderSettingsSnapshot(
+                provider: settingsStore.selectedEngineSTTProvider.rawValue,
+                apiBase: settingsStore.engineSTTAPIBase.trimmingCharacters(in: .whitespacesAndNewlines),
+                model: settingsStore.engineSTTModel.trimmingCharacters(in: .whitespacesAndNewlines),
+                apiKey: settingsStore.configuredEngineSTTAPIKey()
+            ),
+            llm: EngineProviderSettingsSnapshot(
+                provider: settingsStore.selectedEngineLLMProvider.rawValue,
+                apiBase: settingsStore.engineLLMAPIBase.trimmingCharacters(in: .whitespacesAndNewlines),
+                model: settingsStore.engineLLMModel.trimmingCharacters(in: .whitespacesAndNewlines),
+                apiKey: settingsStore.configuredEngineLLMAPIKey()
+            )
+        )
+    }
     
     private func currentSettingsObservationSnapshot() -> SettingsObservationSnapshot {
         SettingsObservationSnapshot(
@@ -1371,7 +1445,8 @@ final class AppCoordinator {
                     keyCode: settingsStore.quickCaptureToggleHotkeyCode,
                     modifiers: settingsStore.quickCaptureToggleHotkeyModifiers
                 )
-            )
+            ),
+            engine: currentEngineObservationSnapshot()
         )
     }
     private func observeSettings() {
@@ -1422,6 +1497,10 @@ final class AppCoordinator {
                     if previousSnapshot.selectedAppLanguage != snapshot.selectedAppLanguage {
                         self.statusBarController.reloadLocalizedStrings()
                         self.pillFloatingIndicatorController.reloadLocalizedStrings()
+                    }
+
+                    if previousSnapshot.engine != snapshot.engine {
+                        self.scheduleEngineConfigurationSync()
                     }
 
                     self.statusBarController.updateDynamicItems()
@@ -3872,6 +3951,8 @@ final class AppCoordinator {
     func cleanup() {
         floatingIndicatorHiddenTask?.cancel()
         floatingIndicatorHiddenTask = nil
+        engineConfigSyncTask?.cancel()
+        engineConfigSyncTask = nil
         teardownEscapeKeyMonitor()
         teardownModifierKeyMonitor()
         removeEscapeGlobalMonitorFallbackIfNeeded()
