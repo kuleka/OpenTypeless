@@ -1,6 +1,6 @@
 # OpenTypeless Engine ↔ Client API Contract
 
-> **Version**: 1.0.0-draft
+> **Version**: 1.3.0-draft
 > **Base URL**: `http://127.0.0.1:19823`
 > **Port 可配置**: 通过环境变量 `OPEN_TYPELESS_PORT` 覆盖默认端口
 
@@ -258,8 +258,10 @@ Content-Type: application/json
     "window_title": "Compose New Message"
   },
   "options": {
+    "task": "polish",
     "language": "auto",
-    "model": "minimax/minimax-m2.7"
+    "model": "minimax/minimax-m2.7",
+    "output_language": null
   }
 }
 ```
@@ -274,8 +276,24 @@ Content-Type: application/json
 | `context.app_id` | string | 否 | `""` | macOS bundle ID，如 `"com.apple.mail"` |
 | `context.window_title` | string | 否 | `""` | 当前窗口标题 |
 | `options` | object | 否 | `{}` | 可选配置，用于覆盖 `/config` 中的默认值 |
-| `options.language` | string | 否 | config 中的 `default_language` | 语言提示：`"auto"` / `"en"` / `"zh"` 等 |
+| `options.task` | string | 否 | `"polish"` | 任务类型：`"polish"`（润色）、`"translate"`（翻译）。详见下方 [Task 类型说明](#task-类型说明) |
+| `options.language` | string | 否 | config 中的 `default_language` | STT 语言提示：`"auto"` / `"en"` / `"zh"` 等 |
 | `options.model` | string | 否 | config 中的 `llm.model` | 覆盖本次请求使用的 LLM 模型 |
+| `options.output_language` | string | 条件必填 | `null` | 输出语言。当 `task = "translate"` 时**必填**，如 `"en"`、`"zh"`、`"ja"`。其他 task 时忽略 |
+
+#### Task 类型说明
+
+| task | 说明 | output_language | Engine 行为 |
+|------|------|----------------|------------|
+| `"polish"` | 润色（默认） | 忽略 | 根据场景选择润色 prompt，输出与输入同语言 |
+| `"translate"` | 翻译 | **必填** | 使用翻译 prompt，将 STT 转写结果翻译为 `output_language` 指定的语言 |
+
+> **扩展说明**：未来如需增加新任务（如 `"summarize"`），只需在 Engine 的 prompt 模板中添加对应条目，并在此处更新文档。Client 只需传不同的 `task` 值。
+
+#### Task 校验规则
+
+- `task = "translate"` 但 `output_language` 为空 → Engine 返回 **422 VALIDATION_ERROR**：`"output_language is required when task is translate"`
+- `task` 为不支持的值 → Engine 返回 **422 VALIDATION_ERROR**：`"Unsupported task: xxx. Supported: polish, translate"`
 
 #### 音频要求
 
@@ -289,6 +307,7 @@ Content-Type: application/json
 {
   "text": "Hi Tom, thanks for the report. I've reviewed the numbers and everything looks good.",
   "raw_transcript": "hi tom thanks for the report i've reviewed the numbers and everything looks good",
+  "task": "polish",
   "context_detected": "email",
   "model_used": "minimax/minimax-m2.7",
   "stt_ms": 250,
@@ -301,12 +320,13 @@ Content-Type: application/json
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `text` | string | 润色后的最终文本，Client 应将此文本粘贴到光标位置 |
-| `raw_transcript` | string | STT 原始转写文本（未润色） |
-| `context_detected` | string | 检测到的场景类型（见[场景类型定义](#7-场景类型定义)） |
+| `text` | string | 处理后的最终文本，Client 应将此文本粘贴到光标位置 |
+| `raw_transcript` | string | STT 原始转写文本（未处理） |
+| `task` | string | 实际执行的任务类型：`"polish"` 或 `"translate"` |
+| `context_detected` | string | 检测到的场景类型（见[场景类型定义](#9-场景类型定义)） |
 | `model_used` | string | 实际使用的 LLM 模型标识 |
 | `stt_ms` | integer | STT 转写耗时（毫秒） |
-| `llm_ms` | integer | LLM 润色耗时（毫秒） |
+| `llm_ms` | integer | LLM 处理耗时（毫秒） |
 | `total_ms` | integer | 端到端总耗时（毫秒） |
 
 ---
@@ -515,6 +535,7 @@ Mock 响应：
 {
   "text": "Hi Tom,\n\nThank you for sending the report. I've reviewed the numbers and everything looks good. Let me know if you need anything else.\n\nBest regards",
   "raw_transcript": "hi tom thanks for sending the report i've reviewed the numbers and everything looks good let me know if you need anything else",
+  "task": "polish",
   "context_detected": "email",
   "model_used": "mock",
   "stt_ms": 0,
@@ -542,7 +563,40 @@ Mock 响应：
 {
   "text": "sounds good, let's sync up after lunch 👍",
   "raw_transcript": "sounds good let's sync up after lunch",
+  "task": "polish",
   "context_detected": "chat",
+  "model_used": "mock",
+  "stt_ms": 0,
+  "llm_ms": 0,
+  "total_ms": 0
+}
+```
+
+### Mock /polish — 翻译场景（中文语音 → 英文输出）
+
+请求：
+```json
+{
+  "audio_base64": "UklGRiQAAABXQVZFZm10IBAAAA...",
+  "audio_format": "wav",
+  "context": {
+    "app_id": "com.apple.mail",
+    "window_title": "Compose"
+  },
+  "options": {
+    "task": "translate",
+    "output_language": "en"
+  }
+}
+```
+
+Mock 响应：
+```json
+{
+  "text": "Hi Tom, the meeting is at 3 PM this afternoon. Please bring the quarterly report.",
+  "raw_transcript": "汤姆你好今天下午三点开会请带上季度报告",
+  "task": "translate",
+  "context_detected": "email",
   "model_used": "mock",
   "stt_ms": 0,
   "llm_ms": 0,
@@ -572,6 +626,7 @@ Mock 响应：
 {
   "text": "今天下午三点开会讨论了项目进度，主要结论如下：\n\n1. 后端 API 已完成 80%\n2. 前端预计下周交付\n3. 需要补充单元测试",
   "raw_transcript": "今天下午三点开会讨论了项目进度主要结论如下后端API已完成百分之八十前端预计下周交付需要补充单元测试",
+  "task": "polish",
   "context_detected": "document",
   "model_used": "mock",
   "stt_ms": 0,
@@ -604,3 +659,4 @@ Client 端需要实现以下模块来对接 Engine：
 | 2026-03-28 | 1.0.0-draft | 初始版本，基于 OpenSpec Phase 1 规格创建 |
 | 2026-03-28 | 1.1.0-draft | 新增 `POST /config` 和 `GET /config` 端点；API Key 由 Client 通过 `/config` 提供，不再使用环境变量；新增 `503 NOT_CONFIGURED` 错误码 |
 | 2026-03-28 | 1.2.0-draft | Config 改为 provider-agnostic 的 `stt` / `llm` 分组结构；Engine 不绑定任何特定 provider，只要求目标 API 兼容 OpenAI 格式；支持本地模型（如 Ollama） |
+| 2026-03-28 | 1.3.0-draft | `/polish` 新增 `options.task`（`polish` / `translate`）和 `options.output_language` 参数；响应新增 `task` 字段；translate 时 output_language 为必填，校验失败返回 422 |
