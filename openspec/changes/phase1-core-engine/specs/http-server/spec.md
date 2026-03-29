@@ -26,8 +26,9 @@ The server SHALL expose `GET /health` that returns server status and version.
 The server SHALL expose `POST /config` to receive API connection info from the client, and `GET /config` to return the current configuration with API keys masked.
 
 #### Scenario: Set configuration
-- **WHEN** a POST request is sent to `/config` with valid `stt` (api_base, api_key, model) and `llm` (api_base, api_key, model)
+- **WHEN** a POST request is sent to `/config` with valid `stt` (api_base, api_key, model) and `llm` (api_base, api_key, model), and optionally `default_language`
 - **THEN** the server SHALL store the configuration in memory and respond with `{"status": "configured"}`
+- **AND** if `default_language` is not provided, it SHALL default to `"auto"`
 
 #### Scenario: Missing required fields
 - **WHEN** a POST request to `/config` is missing `stt` or `llm` or any of their required subfields
@@ -35,7 +36,7 @@ The server SHALL expose `POST /config` to receive API connection info from the c
 
 #### Scenario: View configuration
 - **WHEN** a GET request is sent to `/config`
-- **THEN** the server SHALL respond with the current config, API keys masked (prefix + `****` + last 4 chars), and a `configured` boolean
+- **THEN** the server SHALL respond with the current config, API keys masked (prefix + `****` + last 4 chars), a `configured` boolean, and the `default_language` value
 
 #### Scenario: View configuration before setup
 - **WHEN** a GET request is sent to `/config` before any `POST /config` has been called

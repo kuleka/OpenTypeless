@@ -5,7 +5,7 @@ The engine SHALL expose `POST /polish` that accepts audio + context and returns 
 
 #### Scenario: Successful polish request
 - **WHEN** a POST request is sent to `/polish` with valid `audio_base64`, `audio_format`, and `context`
-- **THEN** the server SHALL return JSON with `text` (polished), `raw_transcript`, `context_detected` (scene name), `model_used`, `stt_ms`, `llm_ms`, and `total_ms`
+- **THEN** the server SHALL return JSON with `text` (polished), `raw_transcript`, `task` (the executed task type), `context_detected` (scene name), `model_used`, `stt_ms`, `llm_ms`, and `total_ms`
 
 #### Scenario: Missing audio
 - **WHEN** a POST request is sent to `/polish` without `audio_base64`
@@ -32,6 +32,25 @@ The engine SHALL handle errors at each pipeline stage gracefully.
 #### Scenario: LLM failure
 - **WHEN** the LLM service fails during a polish request
 - **THEN** the server SHALL return HTTP 502 with an error message indicating LLM failure
+
+### Requirement: Task types
+The engine SHALL support multiple task types via `options.task`, defaulting to `"polish"`. Each task type uses a different prompt strategy.
+
+#### Scenario: Polish task (default)
+- **WHEN** `options.task` is `"polish"` or not specified
+- **THEN** the engine SHALL use the scene-appropriate polishing prompt and return text in the same language as the input
+
+#### Scenario: Translate task
+- **WHEN** `options.task` is `"translate"` and `options.output_language` is `"en"`
+- **THEN** the engine SHALL use a translation prompt and return the STT transcript translated into the specified `output_language`
+
+#### Scenario: Translate without output_language
+- **WHEN** `options.task` is `"translate"` but `options.output_language` is not provided
+- **THEN** the server SHALL return HTTP 422 with error code `VALIDATION_ERROR` and message `"output_language is required when task is translate"`
+
+#### Scenario: Unsupported task
+- **WHEN** `options.task` is an unrecognized value (e.g., `"summarize"`)
+- **THEN** the server SHALL return HTTP 422 with error code `VALIDATION_ERROR` and message `"Unsupported task: xxx. Supported: polish, translate"`
 
 ### Requirement: Request defaults
 The engine SHALL apply sensible defaults for optional fields in the polish request.
