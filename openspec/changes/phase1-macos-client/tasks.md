@@ -23,11 +23,11 @@
 
 ## 4. AppCoordinator 管线改造
 
-- [ ] 4.1 在启动流程中添加 Engine 连接检查（health → config 推送）
-- [ ] 4.2 改造 `stopRecordingAndTranscribe()` 流程：录音 → STT（本地或远程）→ PolishService → 输出
-- [ ] 4.3 替换 AIEnhancementService 调用为 PolishService 调用
-- [ ] 4.4 处理 Engine 离线场景：本地 STT 可用但无法润色时的 UI 提示
-- [ ] 4.5 确保 context（app_id、window_title）正确传递到 PolishService
+- [x] 4.1 在启动流程中添加 Engine 连接检查（health → config 推送）
+- [x] 4.2 改造 `stopRecordingAndTranscribe()` 流程：录音 → STT（本地或远程）→ PolishService → 输出
+- [x] 4.3 替换 AIEnhancementService 调用为 PolishService 调用
+- [x] 4.4 处理 Engine 离线场景：本地 STT 可用但无法润色时的 UI 提示
+- [x] 4.5 确保 context（app_id、window_title）正确传递到 PolishService
 
 ## 5. Settings UI — 设置界面改造
 

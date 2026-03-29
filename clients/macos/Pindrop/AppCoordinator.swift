@@ -171,6 +171,29 @@ struct SettingsObservationSnapshot: Equatable {
 @Observable
 final class AppCoordinator {
 
+    struct EngineStartupHandlers {
+        let health: @MainActor () async throws -> HealthResponse
+        let fetchConfig: @MainActor () async throws -> ConfigResponse
+        let pushConfig: @MainActor (ConfigRequest) async throws -> ConfigStatusResponse
+    }
+
+    struct PolishHandlers {
+        let polish: @MainActor (
+            _ text: String,
+            _ appContext: AppContextInfo?,
+            _ task: PolishTask,
+            _ outputLanguage: String?
+        ) async throws -> PolishService.PolishResult
+    }
+
+    struct RecordingPolishOutcome: Equatable {
+        let finalText: String
+        let originalText: String?
+        let enhancedWithModel: String?
+        let didAttemptPolish: Bool
+        let usedFallback: Bool
+    }
+
     private static var isRunningTests: Bool {
         ProcessInfo.processInfo.environment["PINDROP_TEST_MODE"] == "1"
             || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
@@ -241,6 +264,8 @@ final class AppCoordinator {
     let audioRecorder: AudioRecorder
     let transcriptionService: TranscriptionService
     let modelManager: ModelManager
+    let engineClient: EngineClient
+    let polishService: PolishService
     let aiEnhancementService: AIEnhancementService
     let hotkeyManager: HotkeyManager
     let launchAtLoginManager: LaunchAtLoginManager
@@ -314,6 +339,8 @@ final class AppCoordinator {
     private var floatingIndicatorHiddenUntil: Date?
     private var floatingIndicatorHiddenTask: Task<Void, Never>?
     private var activeFloatingIndicatorType: FloatingIndicatorType?
+    private let engineStartupHandlers: EngineStartupHandlers
+    private let polishHandlers: PolishHandlers
 
     // MARK: - Dictionary Replacements
     
@@ -346,9 +373,15 @@ final class AppCoordinator {
     init(
         modelContext: ModelContext,
         modelContainer: ModelContainer,
-        enableSystemHooks: Bool? = nil
+        enableSystemHooks: Bool? = nil,
+        engineStartupHandlers: EngineStartupHandlers? = nil,
+        polishHandlers: PolishHandlers? = nil,
+        toastPresenter: (any ToastPresenting)? = nil
     ) {
         self.enableSystemHooks = enableSystemHooks ?? !Self.isRunningTests
+        let resolvedEngineClient = EngineClient()
+        let resolvedPolishService = PolishService(client: resolvedEngineClient)
+        let resolvedToastWindowController = ToastWindowController()
         self.permissionManager = PermissionManager()
         do {
             self.audioRecorder = try AudioRecorder(permissionManager: permissionManager)
@@ -358,11 +391,34 @@ final class AppCoordinator {
         }
         self.transcriptionService = TranscriptionService()
         self.modelManager = ModelManager()
+        self.engineClient = resolvedEngineClient
+        self.polishService = resolvedPolishService
         self.aiEnhancementService = AIEnhancementService()
         self.hotkeyManager = HotkeyManager()
         self.launchAtLoginManager = LaunchAtLoginManager()
         self.updateService = UpdateService()
         self.settingsStore = SettingsStore()
+        self.engineStartupHandlers = engineStartupHandlers ?? EngineStartupHandlers(
+            health: { [resolvedEngineClient] in
+                try await resolvedEngineClient.health()
+            },
+            fetchConfig: { [resolvedEngineClient] in
+                try await resolvedEngineClient.fetchConfig()
+            },
+            pushConfig: { [resolvedEngineClient] requestBody in
+                try await resolvedEngineClient.pushConfig(requestBody)
+            }
+        )
+        self.polishHandlers = polishHandlers ?? PolishHandlers(
+            polish: { [resolvedPolishService] text, appContext, task, outputLanguage in
+                try await resolvedPolishService.polish(
+                    text: text,
+                    appContext: appContext,
+                    task: task,
+                    outputLanguage: outputLanguage
+                )
+            }
+        )
         self.audioRecorder.setPreferredInputDeviceUID(settingsStore.selectedInputDeviceUID)
         
         let initialOutputMode: OutputMode = settingsStore.outputMode == "directInsert" ? .directInsert : .clipboard
@@ -372,8 +428,8 @@ final class AppCoordinator {
         self.notesStore = NotesStore(modelContext: modelContext, aiEnhancementService: aiEnhancementService, settingsStore: settingsStore)
         self.contextCaptureService = ContextCaptureService()
         self.contextEngineService = ContextEngineService()
-        self.toastWindowController = ToastWindowController()
-        self.toastService = ToastService(presenter: toastWindowController)
+        self.toastWindowController = resolvedToastWindowController
+        self.toastService = ToastService(presenter: toastPresenter ?? resolvedToastWindowController)
         self.automaticDictionaryLearningService = AutomaticDictionaryLearningService(
             snapshotProvider: contextEngineService,
             dictionaryStore: dictionaryStore,
@@ -667,10 +723,158 @@ final class AppCoordinator {
         registerHotkeysFromSettings()
 
         ensureAccessibilityPermissionForDirectInsert(trigger: "post-onboarding", showFallbackAlert: false)
+        await syncEngineConfigurationOnStartup()
         updateVibeRuntimeStateFromSettings()
         Log.boot.info("finishPostOnboardingSetup complete")
     }
-    
+
+    func syncEngineConfigurationOnStartup() async {
+        do {
+            _ = try await engineStartupHandlers.health()
+        } catch let error as EngineClientError {
+            if error == .connectionFailed {
+                Log.boot.info("Engine unavailable during startup health check; continuing without Engine polish")
+            } else {
+                Log.boot.warning("Engine health check failed during startup: \(error.localizedDescription)")
+            }
+            return
+        } catch {
+            Log.boot.warning("Engine health check failed during startup: \(error.localizedDescription)")
+            return
+        }
+
+        guard let llmConfiguration = currentLLMProviderConfiguration() else {
+            Log.boot.info("Skipping Engine config push because no local LLM provider configuration is available yet")
+            return
+        }
+
+        do {
+            let existingConfig = try await engineStartupHandlers.fetchConfig()
+            let requestBody = ConfigRequest(
+                stt: existingConfig.stt,
+                llm: llmConfiguration,
+                defaultLanguage: Self.engineDefaultLanguageCode(for: settingsStore.selectedAppLanguage)
+            )
+            _ = try await engineStartupHandlers.pushConfig(requestBody)
+            Log.boot.info("Engine config synchronized on startup")
+        } catch let error as EngineClientError {
+            Log.boot.warning("Engine config synchronization failed during startup: \(error.localizedDescription)")
+        } catch {
+            Log.boot.warning("Engine config synchronization failed during startup: \(error.localizedDescription)")
+        }
+    }
+
+    func polishTranscribedTextIfNeeded(
+        _ text: String,
+        appContext: AppContextInfo? = nil
+    ) async -> RecordingPolishOutcome {
+        guard settingsStore.aiEnhancementEnabled else {
+            return RecordingPolishOutcome(
+                finalText: text,
+                originalText: nil,
+                enhancedWithModel: nil,
+                didAttemptPolish: false,
+                usedFallback: false
+            )
+        }
+
+        do {
+            let result = try await polishHandlers.polish(text, appContext, .polish, nil)
+            if result.usedFallback {
+                toastService.show(
+                    ToastPayload(
+                        message: polishFallbackMessage(for: result.warningMessage),
+                        style: .error
+                    )
+                )
+            }
+
+            return RecordingPolishOutcome(
+                finalText: result.text,
+                originalText: result.rawTranscript,
+                enhancedWithModel: result.usedFallback ? nil : (result.modelUsed ?? settingsStore.aiModel),
+                didAttemptPolish: true,
+                usedFallback: result.usedFallback
+            )
+        } catch let error as EngineClientError {
+            Log.app.error("Engine polish failed: \(error)")
+            toastService.show(
+                ToastPayload(
+                    message: polishFallbackMessage(for: error),
+                    style: .error
+                )
+            )
+            return RecordingPolishOutcome(
+                finalText: text,
+                originalText: text,
+                enhancedWithModel: nil,
+                didAttemptPolish: true,
+                usedFallback: true
+            )
+        } catch {
+            Log.app.error("Engine polish failed: \(error)")
+            toastService.show(
+                ToastPayload(
+                    message: "Text polishing failed. Transcription inserted without polishing.",
+                    style: .error
+                )
+            )
+            return RecordingPolishOutcome(
+                finalText: text,
+                originalText: text,
+                enhancedWithModel: nil,
+                didAttemptPolish: true,
+                usedFallback: true
+            )
+        }
+    }
+
+    private static func engineDefaultLanguageCode(for language: AppLanguage) -> String {
+        language.whisperLanguageCode ?? language.rawValue
+    }
+
+    private func currentLLMProviderConfiguration() -> ProviderConfiguration? {
+        guard let apiBase = settingsStore.apiEndpoint?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !apiBase.isEmpty,
+              let apiKey = settingsStore.configuredAPIKeyForCurrentAIProvider()?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !apiKey.isEmpty else {
+            return nil
+        }
+
+        let model = settingsStore.aiModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !model.isEmpty else {
+            return nil
+        }
+
+        return ProviderConfiguration(
+            apiBase: apiBase,
+            apiKey: apiKey,
+            model: model
+        )
+    }
+
+    private func polishFallbackMessage(for warningMessage: String?) -> String {
+        let normalizedWarning = warningMessage?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let normalizedWarning, !normalizedWarning.isEmpty {
+            return "Text polishing failed (\(normalizedWarning)). Transcription inserted without polishing."
+        }
+
+        return "Text polishing failed. Transcription inserted without polishing."
+    }
+
+    private func polishFallbackMessage(for error: EngineClientError) -> String {
+        switch error {
+        case .connectionFailed:
+            return "Engine is offline. Transcription inserted without polishing."
+        case .notConfigured:
+            return "Engine is not configured for polishing. Transcription inserted without polishing."
+        case .llmFailure(let message):
+            return polishFallbackMessage(for: message)
+        default:
+            return "Text polishing failed. Transcription inserted without polishing."
+        }
+    }
+
     private func seedBuiltInPresetsIfNeeded() {
         do {
             try promptPresetStore.seedBuiltInPresets()
@@ -767,6 +971,7 @@ final class AppCoordinator {
         }
 
         ensureAccessibilityPermissionForDirectInsert(trigger: "startup", showFallbackAlert: false)
+        await syncEngineConfigurationOnStartup()
 
         var modelName = settingsStore.selectedModel
 
@@ -2558,168 +2763,37 @@ final class AppCoordinator {
             }
         }
         
-        var finalText = normalizedTranscriptionText(textAfterMentions)
-        var originalText: String? = nil
-        var enhancedWithModel: String? = nil
+        let polishOutcome = await polishTranscribedTextIfNeeded(
+            textAfterMentions,
+            appContext: capturedSnapshot?.appContext
+        )
+        var finalText = normalizedTranscriptionText(polishOutcome.finalText)
+        let originalText = polishOutcome.originalText
+        let enhancedWithModel = polishOutcome.enhancedWithModel
 
-        if settingsStore.aiEnhancementEnabled,
-           let apiEndpoint = settingsStore.apiEndpoint,
-           settingsStore.currentAIProviderHasRequiredAPIKey() {
-            do {
-                let apiKey = settingsStore.configuredAPIKeyForCurrentAIProvider()
-                originalText = textAfterMentions
-                Log.app.info("AI enhancement enabled, saving original text before enhancement")
-                
-                var basePrompt: String
-                if let presetId = settingsStore.selectedPresetId,
-                   let presetUUID = UUID(uuidString: presetId),
-                   let allPresets = try? promptPresetStore.fetchAll(),
-                   let selectedPreset = allPresets.first(where: { $0.id == presetUUID }) {
-                    basePrompt = selectedPreset.prompt
-                } else {
-                    basePrompt = settingsStore.aiEnhancementPrompt
-                }
+        if polishOutcome.didAttemptPolish,
+           let capabilities = mentionFormattingCapabilities,
+           capabilities.supportsFileMentions,
+           !derivedWorkspaceRoots.isEmpty {
+            let renderedPlaceholders = mentionRewriteService.renderCanonicalPlaceholders(
+                in: finalText,
+                capabilities: capabilities
+            )
+            finalText = renderedPlaceholders.text
 
-                let vocabularyWords = try dictionaryStore.fetchAllVocabularyWords().map(\.word)
-                let replacementCorrections = lastAppliedReplacements.map {
-                    AIEnhancementService.ContextMetadata.ReplacementCorrection(
-                        original: $0.original,
-                        replacement: $0.replacement
-                    )
-                }
-
-                if mentionFormattingCapabilities?.supportsFileMentions == true {
-                    basePrompt += "\n\nIf the input contains file placeholders formatted as [[:relative/path.ext:]], preserve each placeholder token exactly. Do not change brackets, colons, slashes, file names, or extensions inside those tokens."
-                }
-                
-                var contextMetadata = AIEnhancementService.ContextMetadata.none
-                var clipboardText: String? = nil
-
-                var workspaceTreeSummary: String? = nil
-                if !derivedWorkspaceRoots.isEmpty {
-                    workspaceTreeSummary = await mentionRewriteService.generateWorkspaceTreeSummary(
-                        workspaceRoots: derivedWorkspaceRoots,
-                        activeDocumentPath: capturedSnapshot?.appContext?.documentPath
-                    )
-                }
-
-                let liveSessionContext = currentLiveSessionContext()
-                
-                if let context = capturedContext {
-                    let hasClipboardText = context.clipboardText != nil && !context.clipboardText!.isEmpty
-                    clipboardText = hasClipboardText ? context.clipboardText : nil
-                    
-                    contextMetadata = AIEnhancementService.ContextMetadata(
-                        hasClipboardText: hasClipboardText,
-                        clipboardText: clipboardText,
-                        hasClipboardImage: false,
-                        appContext: capturedSnapshot?.appContext,
-                        adapterCapabilities: mentionFormattingCapabilities,
-                        routingSignal: capturedRoutingSignal,
-                        workspaceFileTree: workspaceTreeSummary,
-                        liveSessionContext: liveSessionContext,
-                        vocabularyWords: vocabularyWords,
-                        replacementCorrections: replacementCorrections
-                    )
-                } else if let appContext = capturedSnapshot?.appContext {
-                    contextMetadata = AIEnhancementService.ContextMetadata(
-                        hasClipboardText: false,
-                        clipboardText: nil,
-                        hasClipboardImage: false,
-                        appContext: appContext,
-                        adapterCapabilities: mentionFormattingCapabilities,
-                        routingSignal: capturedRoutingSignal,
-                        workspaceFileTree: workspaceTreeSummary,
-                        liveSessionContext: liveSessionContext,
-                        vocabularyWords: vocabularyWords,
-                        replacementCorrections: replacementCorrections
-                    )
-                } else if let liveSessionContext {
-                    contextMetadata = AIEnhancementService.ContextMetadata(
-                        hasClipboardText: false,
-                        clipboardText: nil,
-                        hasClipboardImage: false,
-                        appContext: nil,
-                        adapterCapabilities: mentionFormattingCapabilities,
-                        routingSignal: capturedRoutingSignal,
-                        workspaceFileTree: workspaceTreeSummary,
-                        liveSessionContext: liveSessionContext,
-                        vocabularyWords: vocabularyWords,
-                        replacementCorrections: replacementCorrections
-                    )
-                } else if !vocabularyWords.isEmpty || !replacementCorrections.isEmpty {
-                    contextMetadata = AIEnhancementService.ContextMetadata(
-                        hasClipboardText: false,
-                        clipboardText: nil,
-                        hasClipboardImage: false,
-                        appContext: nil,
-                        adapterCapabilities: mentionFormattingCapabilities,
-                        routingSignal: capturedRoutingSignal,
-                        workspaceFileTree: workspaceTreeSummary,
-                        liveSessionContext: nil,
-                        vocabularyWords: vocabularyWords,
-                        replacementCorrections: replacementCorrections
-                    )
-                }
-
-                finalText = try await aiEnhancementService.enhance(
-                    text: textAfterMentions,
-                    apiEndpoint: apiEndpoint,
-                    apiKey: apiKey,
-                    model: settingsStore.aiModel,
-                    customPrompt: basePrompt,
-                    imageBase64: nil,
-                    context: contextMetadata,
-                    provider: settingsStore.currentAIProvider
+            if renderedPlaceholders.didRewrite {
+                Log.app.info("Post-polish placeholder render: \(renderedPlaceholders.rewrittenCount) placeholder(s) rendered, \(renderedPlaceholders.preservedCount) preserved")
+            } else {
+                let postPolishRewriteResult = await mentionRewriteService.rewrite(
+                    text: finalText,
+                    capabilities: capabilities,
+                    workspaceRoots: derivedWorkspaceRoots,
+                    activeDocumentPath: capturedSnapshot?.appContext?.documentPath
                 )
-                if let capabilities = mentionFormattingCapabilities,
-                   capabilities.supportsFileMentions,
-                   !derivedWorkspaceRoots.isEmpty {
-                    let renderedPlaceholders = mentionRewriteService.renderCanonicalPlaceholders(
-                        in: finalText,
-                        capabilities: capabilities
-                    )
-                    finalText = renderedPlaceholders.text
-
-                    if renderedPlaceholders.didRewrite {
-                        Log.app.info("Post-enhancement placeholder render: \(renderedPlaceholders.rewrittenCount) placeholder(s) rendered, \(renderedPlaceholders.preservedCount) preserved")
-                    } else {
-                        let postEnhancementRewriteResult = await mentionRewriteService.rewrite(
-                            text: finalText,
-                            capabilities: capabilities,
-                            workspaceRoots: derivedWorkspaceRoots,
-                            activeDocumentPath: capturedSnapshot?.appContext?.documentPath
-                        )
-                        finalText = postEnhancementRewriteResult.text
-                        if postEnhancementRewriteResult.didRewrite {
-                            Log.app.info("Post-enhancement mention rewrite: \(postEnhancementRewriteResult.rewrittenCount) mention(s) rewritten, \(postEnhancementRewriteResult.preservedCount) preserved")
-                        }
-                    }
+                finalText = postPolishRewriteResult.text
+                if postPolishRewriteResult.didRewrite {
+                    Log.app.info("Post-polish mention rewrite: \(postPolishRewriteResult.rewrittenCount) mention(s) rewritten, \(postPolishRewriteResult.preservedCount) preserved")
                 }
-                capturedContext = nil
-                capturedSnapshot = nil
-                capturedAdapterCapabilities = nil
-                capturedRoutingSignal = nil
-                stopLiveContextSession()
-                enhancedWithModel = settingsStore.aiModel
-                Log.app.info("AI enhancement completed, original: \(textAfterMentions.count) chars, enhanced: \(finalText.count) chars")
-            } catch {
-                Log.app.error("AI enhancement failed: \(error)")
-                toastService.show(
-                    ToastPayload(
-                        message: "AI enhancement failed. Transcription inserted without enhancement.",
-                        style: .error
-                    )
-                )
-                // Keep originalText so the unenhanced transcription is saved to history
-            }
-        } else {
-            if !settingsStore.aiEnhancementEnabled {
-                Log.app.debug("AI enhancement disabled, no original text to save")
-            } else if settingsStore.apiEndpoint == nil {
-                Log.app.debug("AI enhancement enabled but no API endpoint configured")
-            } else if settingsStore.requiresAPIKey(for: settingsStore.currentAIProvider) {
-                Log.app.debug("AI enhancement enabled but no API key configured")
             }
         }
 

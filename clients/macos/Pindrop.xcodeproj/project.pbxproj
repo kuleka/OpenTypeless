@@ -56,6 +56,7 @@
 		AUDIOCAPS02A2B3C4D5E6F /* AudioEngineCapabilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = AUDIOCAPS01A2B3C4D5E6F /* AudioEngineCapabilities.swift */; };
 		AUTOLEARNBUILD01A2B3C4D5E6F /* AutomaticDictionaryLearningService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AUTOLEARNFILE01A2B3C4D5E6F /* AutomaticDictionaryLearningService.swift */; };
 		AUTOLEARNTSTBUILD01A2B3C4D5E6F /* AutomaticDictionaryLearningServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AUTOLEARNTSTFILE01A2B3C4D5E6F /* AutomaticDictionaryLearningServiceTests.swift */; };
+		APPCOORDENGPIPEBUILD01A2B3C4D5E6F /* AppCoordinatorEnginePipelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = APPCOORDENGPIPEFILE01A2B3C4D5E6F /* AppCoordinatorEnginePipelineTests.swift */; };
 		B105C906BA4047A6B066CA79 /* HotkeyManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D61D78A13A5C4AAD839A3F76 /* HotkeyManagerTests.swift */; };
 		B2C3D4E5F6789012345678AB /* ModelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9D8C7B6A5F4E3D2C1B0A9F8 /* ModelManager.swift */; };
 		BC44C77F1DDD43BFAD8A88BD /* HistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDDC77E732664A859279FEC9 /* HistoryStore.swift */; };
@@ -214,6 +215,7 @@
 		AIMODELSERVICEFILE01A2B3C4D5E6F /* AIModelService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIModelService.swift; sourceTree = "<group>"; };
 		ALERT001A2B3C4D5E6F71 /* AlertManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertManager.swift; sourceTree = "<group>"; };
 		APPICON01A2B3C4D5E6F71 /* Pindrop.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = Pindrop.icon; sourceTree = "<group>"; };
+		APPCOORDENGPIPEFILE01A2B3C4D5E6F /* AppCoordinatorEnginePipelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCoordinatorEnginePipelineTests.swift; sourceTree = "<group>"; };
 		AUDIOCAPS01A2B3C4D5E6F /* AudioEngineCapabilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioEngineCapabilities.swift; sourceTree = "<group>"; };
 		AUTOLEARNFILE01A2B3C4D5E6F /* AutomaticDictionaryLearningService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomaticDictionaryLearningService.swift; sourceTree = "<group>"; };
 		AUTOLEARNTSTFILE01A2B3C4D5E6F /* AutomaticDictionaryLearningServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomaticDictionaryLearningServiceTests.swift; sourceTree = "<group>"; };
@@ -563,6 +565,7 @@
 				TOASTTESTFILE01A2B3C4D5E6F /* ToastServiceTests.swift */,
 				AUTOLEARNTSTFILE01A2B3C4D5E6F /* AutomaticDictionaryLearningServiceTests.swift */,
 				COORDFLW02A2B3C4D5E6F /* AppCoordinatorContextFlowTests.swift */,
+				APPCOORDENGPIPEFILE01A2B3C4D5E6F /* AppCoordinatorEnginePipelineTests.swift */,
 				MNTFMTTEST02A2B3C4D5E6F /* MentionFormatterTests.swift */,
 				AIENHTEST02A2B3C4D5E6F /* AIEnhancementServiceTests.swift */,
 				POLISHSVCTESTFILE01A2B3C4D5E6F71 /* PolishServiceTests.swift */,
@@ -860,6 +863,7 @@
 				TOASTTESTBUILD01A2B3C4D5E6F /* ToastServiceTests.swift in Sources */,
 				AUTOLEARNTSTBUILD01A2B3C4D5E6F /* AutomaticDictionaryLearningServiceTests.swift in Sources */,
 				COORDFLW01A2B3C4D5E6F /* AppCoordinatorContextFlowTests.swift in Sources */,
+				APPCOORDENGPIPEBUILD01A2B3C4D5E6F /* AppCoordinatorEnginePipelineTests.swift in Sources */,
 				MNTFMTTEST01A2B3C4D5E6F /* MentionFormatterTests.swift in Sources */,
 				AIENHTEST01A2B3C4D5E6F /* AIEnhancementServiceTests.swift in Sources */,
 				POLISHSVCTESTBUILD01A2B3C4D5E6F70 /* PolishServiceTests.swift in Sources */,

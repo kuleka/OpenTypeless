@@ -1,8 +1,8 @@
-# Contributing to Pindrop
+# Contributing to the OpenTypeless macOS Client
 
-Thank you for your interest in contributing to Pindrop! Whether you're fixing a bug, adding a feature, or improving documentation, your help is welcome and appreciated.
+Thank you for your interest in contributing to the OpenTypeless macOS client. Whether you're fixing a bug, adding a feature, or improving documentation, your help is welcome and appreciated.
 
-Pindrop is a macOS menu bar dictation app that uses [WhisperKit](https://github.com/argmaxinc/WhisperKit) for fully local, on-device speech-to-text. It's built with Swift and SwiftUI, targets macOS 14+, and uses a small set of pinned Swift package dependencies, including WhisperKit, FluidAudio, and Sparkle.
+This client is a macOS menu bar dictation app built with Swift and SwiftUI. It still contains the original Pindrop foundation, but it is being adapted into the OpenTypeless macOS client. The repo currently uses pinned Swift package dependencies including WhisperKit, FluidAudio, and Sparkle.
 
 This repository is also the current OpenTypeless macOS client. The codebase is mid-migration from the original Pindrop architecture toward an `OpenTypeless Client + Engine` split.
 
@@ -42,11 +42,11 @@ brew install swiftlint swiftformat
 
 ### Clone and Build
 
-1. **Fork the repository** on GitHub, then clone your fork:
+1. **Fork the repository** on GitHub, then clone your fork or local copy of OpenTypeless:
 
    ```bash
-   git clone https://github.com/YOUR_USERNAME/pindrop.git
-   cd pindrop
+   git clone <your-fork-of-OpenTypeless>
+   cd OpenTypeless/clients/macos
    ```
 
 2. **Build the project:**
@@ -64,8 +64,7 @@ brew install swiftlint swiftformat
 4. **Open in Xcode** (if you prefer the IDE):
 
    ```bash
-   just xcode
-   # Or: open Pindrop.xcodeproj
+   open Pindrop.xcodeproj
    ```
 
 For the full build system reference (release builds, DMGs, code signing, notarization), see [BUILD.md](BUILD.md).
@@ -402,11 +401,11 @@ These are project-specific guardrails. Violating them will block your PR.
 
 - **Architecture questions**: Read [AGENTS.md](AGENTS.md) first — it covers structure, conventions, and where to find things.
 - **Build issues**: See [BUILD.md](BUILD.md) for the full build system reference.
-- **Still stuck?** Open a [GitHub Discussion](https://github.com/watzon/pindrop/discussions) or ask in an issue.
+- **Still stuck?** Start from the docs in this repository and then open a discussion or issue in the current OpenTypeless repo if needed.
 
 ### Reporting Bugs
 
-Open a [GitHub Issue](https://github.com/watzon/pindrop/issues/new) with:
+Open an issue in the current repository with:
 
 - macOS version and Mac model
 - Steps to reproduce
@@ -415,7 +414,7 @@ Open a [GitHub Issue](https://github.com/watzon/pindrop/issues/new) with:
 
 ### Feature Requests
 
-Open a [GitHub Issue](https://github.com/watzon/pindrop/issues/new) describing:
+Open an issue in the current repository describing:
 
 - The problem you're trying to solve
 - Your proposed solution
@@ -425,4 +424,4 @@ Check the [anti-patterns](#anti-patterns-to-avoid) and scope constraints above b
 
 ## License
 
-By contributing to Pindrop, you agree that your contributions will be licensed under the [MIT License](LICENSE).
+By contributing to the OpenTypeless macOS client, you agree that your contributions will be licensed under the [MIT License](LICENSE).
