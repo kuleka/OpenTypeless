@@ -47,4 +47,4 @@
 ## 9. End-to-End Verification
 
 - [x] 9.1 Run full test suite with `pytest` — all tests pass
-- [ ] 9.2 Manual verification: start server with `open-typeless serve`, call `POST /config` with test API keys, confirm `POST /polish` returns polished text
+- [x] 9.2 Manual verification: start server with `open-typeless serve`, call `POST /config` with test API keys, confirm `POST /polish` returns polished text
