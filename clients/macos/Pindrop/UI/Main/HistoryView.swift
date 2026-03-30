@@ -489,7 +489,6 @@ struct HistoryTranscriptionRow: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.locale) private var locale
     @State private var isHovered = false
-    @State private var showingSaveSuccess = false
 
     private var cardBackground: Color {
         if isSelected {
@@ -519,10 +518,6 @@ struct HistoryTranscriptionRow: View {
         record.enhancedWith != nil
     }
     
-    private var notesStore: NotesStore {
-        NotesStore(modelContext: modelContext)
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Main row content
@@ -635,21 +630,7 @@ struct HistoryTranscriptionRow: View {
                 }
             }
             
-            Divider()
-            
-            Button {
-                saveAsNote()
-            } label: {
-                Label(localized("Save as Note", locale: locale), systemImage: "note.text")
-            }
         }
-        .overlay(
-            Group {
-                if showingSaveSuccess {
-                    successToast
-                }
-            }
-        )
     }
 
     private func metadataItem(icon: String, text: String) -> some View {
@@ -662,80 +643,6 @@ struct HistoryTranscriptionRow: View {
         .foregroundStyle(AppColors.textTertiary)
     }
     
-    private var successToast: some View {
-        VStack {
-            Spacer()
-            HStack(spacing: AppTheme.Spacing.sm) {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.white)
-                Text(localized("Saved as Note", locale: locale))
-                    .font(AppTypography.subheadline)
-                    .foregroundStyle(.white)
-            }
-            .padding(.horizontal, AppTheme.Spacing.lg)
-            .padding(.vertical, AppTheme.Spacing.md)
-            .background(AppColors.accent)
-            .clipShape(Capsule())
-            .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.opacity(0.001))
-        .transition(.opacity.combined(with: .scale))
-    }
-    
-    
-    private func saveAsNote() {
-        Task {
-            // Generate title from first 50 chars of transcription
-            let title: String
-            let trimmedText = record.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmedText.count > 50 {
-                title = String(trimmedText.prefix(50)) + "..."
-            } else if trimmedText.isEmpty {
-                let formatter = DateFormatter()
-                formatter.dateStyle = .medium
-                formatter.timeStyle = .short
-                title = "Note from \(formatter.string(from: record.timestamp))"
-            } else {
-                title = trimmedText
-            }
-            
-            // Use enhanced text if available, otherwise original
-            let content = record.text
-            
-            do {
-                // Check if AI Enhancement is enabled for metadata generation
-                let settingsStore = SettingsStore()
-                let generateMetadata = settingsStore.aiEnhancementEnabled
-                
-                try await notesStore.create(
-                    title: title,
-                    content: content,
-                    tags: [],
-                    sourceTranscriptionID: record.id,
-                    generateMetadata: generateMetadata
-                )
-                
-                // Show success feedback
-                await MainActor.run {
-                    withAnimation(AppTheme.Animation.fast) {
-                        showingSaveSuccess = true
-                    }
-                }
-                
-                // Hide after 2 seconds
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
-                await MainActor.run {
-                    withAnimation(AppTheme.Animation.fast) {
-                        showingSaveSuccess = false
-                    }
-                }
-            } catch {
-                Log.ui.error("Failed to save transcription as note: \(error)")
-            }
-        }
-    }
 }
 
 #Preview("History View - With Data") {

@@ -16,7 +16,6 @@ enum MainNavItem: String, Identifiable {
     case history = "History"
     case transcribe = "Transcribe"
     case models = "Models"
-    case notes = "Notes"
     case dictionary = "Dictionary"
     case settings = "Settings"
 
@@ -24,7 +23,6 @@ enum MainNavItem: String, Identifiable {
         .home,
         .history,
         .transcribe,
-        .notes,
         .dictionary,
         .models,
         .settings
@@ -42,7 +40,6 @@ enum MainNavItem: String, Identifiable {
         case .history: return "clock.fill"
         case .transcribe: return "waveform"
         case .models: return "cpu"
-        case .notes: return "note.text"
         case .dictionary: return "text.book.closed"
         case .settings: return "gearshape"
         }
@@ -232,8 +229,6 @@ struct MainWindow: View {
             } else {
                 comingSoonView(for: selectedNav)
             }
-        case .notes:
-            NotesView()
         case .dictionary:
             DictionaryView()
         case .settings:

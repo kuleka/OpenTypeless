@@ -202,7 +202,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             MediaFolder.self,
             WordReplacement.self,
             VocabularyWord.self,
-            Note.self,
             PromptPreset.self,
             configurations: configuration
         )
@@ -448,8 +447,7 @@ final class SwiftDataStoreRepairService {
                 for: TranscriptionRecordSchemaV1.TranscriptionRecordV1.self,
                 WordReplacement.self,
                 VocabularyWord.self,
-                Note.self,
-                PromptPreset.self,
+                    PromptPreset.self,
                 configurations: configuration
             )
         case .v2:
@@ -457,8 +455,7 @@ final class SwiftDataStoreRepairService {
                 for: TranscriptionRecordSchemaV2.TranscriptionRecord.self,
                 WordReplacement.self,
                 VocabularyWord.self,
-                Note.self,
-                PromptPreset.self,
+                    PromptPreset.self,
                 configurations: configuration
             )
         case .v3:
@@ -466,8 +463,7 @@ final class SwiftDataStoreRepairService {
                 for: TranscriptionRecordSchemaV3.TranscriptionRecord.self,
                 WordReplacement.self,
                 VocabularyWord.self,
-                Note.self,
-                PromptPreset.self,
+                    PromptPreset.self,
                 configurations: configuration
             )
         case .v4:
@@ -475,8 +471,7 @@ final class SwiftDataStoreRepairService {
                 for: TranscriptionRecordSchemaV4.TranscriptionRecord.self,
                 WordReplacement.self,
                 VocabularyWord.self,
-                Note.self,
-                PromptPreset.self,
+                    PromptPreset.self,
                 configurations: configuration
             )
         case .v5:
@@ -485,8 +480,7 @@ final class SwiftDataStoreRepairService {
                 MediaFolder.self,
                 WordReplacement.self,
                 VocabularyWord.self,
-                Note.self,
-                PromptPreset.self,
+                    PromptPreset.self,
                 configurations: configuration
             )
         }

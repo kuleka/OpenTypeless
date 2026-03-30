@@ -1,6 +1,6 @@
 # SERVICES LAYER
 
-9 service modules handling all non-UI logic. All @MainActor except HotkeyManager.
+8 service modules handling all non-UI logic. All @MainActor except HotkeyManager.
 
 ## OVERVIEW
 

@@ -50,7 +50,6 @@ struct HistoryStoreTests {
                 for: TranscriptionRecordSchemaV3.TranscriptionRecord.self,
                 WordReplacement.self,
                 VocabularyWord.self,
-                Note.self,
                 PromptPreset.self,
                 configurations: configuration
             )
@@ -72,7 +71,6 @@ struct HistoryStoreTests {
             MediaFolder.self,
             WordReplacement.self,
             VocabularyWord.self,
-            Note.self,
             PromptPreset.self,
             configurations: configuration
         )
@@ -99,7 +97,6 @@ struct HistoryStoreTests {
                 for: TranscriptionRecordSchemaV4.TranscriptionRecord.self,
                 WordReplacement.self,
                 VocabularyWord.self,
-                Note.self,
                 PromptPreset.self,
                 configurations: configuration
             )
@@ -123,7 +120,6 @@ struct HistoryStoreTests {
             MediaFolder.self,
             WordReplacement.self,
             VocabularyWord.self,
-            Note.self,
             PromptPreset.self,
             configurations: configuration
         )
@@ -1017,7 +1013,6 @@ struct HistoryStoreTests {
                 for: TranscriptionRecordSchemaV1.TranscriptionRecordV1.self,
                 WordReplacement.self,
                 VocabularyWord.self,
-                Note.self,
                 PromptPreset.self,
                 configurations: configuration
             )
@@ -1043,7 +1038,6 @@ struct HistoryStoreTests {
                 for: TranscriptionRecordSchemaV3.TranscriptionRecord.self,
                 WordReplacement.self,
                 VocabularyWord.self,
-                Note.self,
                 PromptPreset.self,
                 configurations: configuration
             )
@@ -1072,7 +1066,6 @@ struct HistoryStoreTests {
                 for: TranscriptionRecordSchemaV4.TranscriptionRecord.self,
                 WordReplacement.self,
                 VocabularyWord.self,
-                Note.self,
                 PromptPreset.self,
                 configurations: configuration
             )
@@ -1106,7 +1099,6 @@ struct HistoryStoreTests {
                 for: TranscriptionRecordSchemaV4.TranscriptionRecord.self,
                 WordReplacement.self,
                 VocabularyWord.self,
-                Note.self,
                 configurations: configuration
             )
 
@@ -1160,7 +1152,6 @@ struct HistoryStoreTests {
             MediaFolder.self,
             WordReplacement.self,
             VocabularyWord.self,
-            Note.self,
             PromptPreset.self,
             configurations: configuration
         )

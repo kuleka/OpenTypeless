@@ -18,7 +18,6 @@ enum TranscriptionRecordSchema: VersionedSchema {
             MediaFolder.self,
             WordReplacement.self,
             VocabularyWord.self,
-            Note.self,
             PromptPreset.self
         ]
     }
@@ -133,7 +132,6 @@ enum TranscriptionRecordSchemaV1: VersionedSchema {
             TranscriptionRecordV1.self,
             WordReplacement.self,
             VocabularyWord.self,
-            Note.self,
             PromptPreset.self
         ]
     }
@@ -171,7 +169,6 @@ enum TranscriptionRecordSchemaV2: VersionedSchema {
             TranscriptionRecord.self,
             WordReplacement.self,
             VocabularyWord.self,
-            Note.self,
             PromptPreset.self
         ]
     }
@@ -217,7 +214,6 @@ enum TranscriptionRecordSchemaV3: VersionedSchema {
             TranscriptionRecord.self,
             WordReplacement.self,
             VocabularyWord.self,
-            Note.self,
             PromptPreset.self
         ]
     }
@@ -266,7 +262,6 @@ enum TranscriptionRecordSchemaV4: VersionedSchema {
             TranscriptionRecord.self,
             WordReplacement.self,
             VocabularyWord.self,
-            Note.self,
             PromptPreset.self
         ]
     }
@@ -333,7 +328,6 @@ enum TranscriptionRecordSchemaV5: VersionedSchema {
             MediaFolder.self,
             WordReplacement.self,
             VocabularyWord.self,
-            Note.self,
             PromptPreset.self
         ]
     }

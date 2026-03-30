@@ -246,7 +246,6 @@ struct AppCoordinatorEnginePipelineTests {
             TranscriptionRecord.self,
             WordReplacement.self,
             VocabularyWord.self,
-            Note.self,
             PromptPreset.self,
         ])
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)

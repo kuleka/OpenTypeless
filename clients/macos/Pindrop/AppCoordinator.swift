@@ -296,7 +296,6 @@ final class AppCoordinator {
     let historyStore: HistoryStore
     let dictionaryStore: DictionaryStore
     let settingsStore: SettingsStore
-    let notesStore: NotesStore
     let contextCaptureService: ContextCaptureService
     let contextEngineService: ContextEngineService
     let toastService: ToastService
@@ -468,7 +467,6 @@ final class AppCoordinator {
         self.outputManager = outputManager ?? OutputManager(outputMode: initialOutputMode)
         self.historyStore = HistoryStore(modelContext: modelContext)
         self.dictionaryStore = DictionaryStore(modelContext: modelContext)
-        self.notesStore = NotesStore(modelContext: modelContext)
         self.contextCaptureService = ContextCaptureService()
         self.contextEngineService = ContextEngineService()
         self.toastWindowController = resolvedToastWindowController
@@ -1496,10 +1494,6 @@ final class AppCoordinator {
             return "Push-to-Talk"
         case "copy-last-transcript":
             return "Copy Last Transcript"
-        case "quick-capture-ptt":
-            return "Note Capture (Push-to-Talk)"
-        case "quick-capture-toggle":
-            return "Note Capture (Toggle)"
         default:
             return identifier
         }
