@@ -1,7 +1,7 @@
 # OpenTypeless — Project Context for Claude Code
 
 > 本文件供 Claude Code session 自动读取，快速了解项目状态和关键决策。
-> 最后更新：2026-03-28
+> 最后更新：2026-03-29
 
 ## 项目概述
 
@@ -22,19 +22,17 @@ OpenTypeless/
 │   └── api-contract.md   ← Engine ↔ Client 接口契约（核心文档）
 ├── clients/
 │   └── macos/            ← Pindrop 源码（macOS 客户端基座）
-├── engine/               ← （待开发）Python Engine
-└── openspec/             ← OpenSpec 规格文件（在 phase1-core-engine 分支上）
+├── engine/               ← Python Engine（Phase 1 已完成）
+└── openspec/             ← OpenSpec 规格文件
 ```
 
 ## 分支策略
 
 | 分支 | 用途 | 当前状态 |
 |------|------|----------|
-| `main` | 共享基础（文档、LICENSE、Pindrop 代码） | 稳定 |
-| `phase1-core-engine` | Python Engine 开发 | 未开始写代码，spec 已就绪 |
-| `phase1-macos-client` | macOS 客户端改造 | 未开始，待创建 spec |
-
-两个开发分支基于 main 的最新状态 rebase，共享 `docs/api-contract.md`。
+| `main` | 稳定主线，包含所有已合并的 Phase 1 代码 | Phase 1 已完成 |
+| `phase1-core-engine` | Python Engine 开发 | ✅ 已合并到 main (PR #2) |
+| `phase1-macos-client` | macOS 客户端改造 | ✅ 已合并到 main (PR #1) |
 
 ## 关键设计决策（及原因）
 
@@ -50,11 +48,11 @@ OpenTypeless/
 - 未配置时调 `/polish` 返回 `503 NOT_CONFIGURED`
 - **原因**：用户通过客户端 UI 配置一切，不需要接触命令行或环境变量
 
-### 3. /polish 是唯一核心端点，通过 task 参数扩展功能
-- `task: "polish"`（默认）→ 润色
-- `task: "translate"` + `output_language: "en"` → 翻译
-- **不拆分为多个端点**（`/transcribe`、`/refine` 等）
-- **原因**：所有功能共享同一管线（音频 → STT → prompt → LLM），只是 prompt 不同。逻辑应在 Engine 内，Client 只是壳，不做编排
+### 3. /polish 支持双模式输入 + /transcribe 独立端点
+- `/polish` 接受 `text`（本地 STT 模式）或 `audio_base64`（远程 STT 模式），二选一
+- `task: "polish"`（默认）→ 润色；`task: "translate"` + `output_language` → 翻译
+- `/transcribe` 是独立的 STT 端点（multipart/form-data），用于调试或只需转写的场景
+- **原因**：Client 可能用本地 WhisperKit 做 STT，只需 Engine 做润色；也可以把 STT 全交给 Engine
 
 ### 4. 场景检测（Scene Detection）
 - 6 种场景：email, chat, ai_chat, document, code, default
@@ -68,8 +66,9 @@ OpenTypeless/
 - **原因**：语音输入通常 5-30 秒，文件小，batch 模式足够
 
 ### 6. STT 和 LLM 分别独立配置
-- `POST /config` 中 `stt` 和 `llm` 各有独立的 api_base / api_key / model
+- `POST /config` 中 `stt`（可选）和 `llm`（必填）各有独立的 api_base / api_key / model
 - 可以 STT 用 Groq、LLM 用 OpenRouter，也可以全用 OpenAI，也可以 LLM 用本地 Ollama
+- 本地 STT 模式下可以不配置 `stt`，只配 `llm` 即可
 
 ## 接口端点一览
 
@@ -78,7 +77,8 @@ OpenTypeless/
 | GET | `/health` | 健康检查 |
 | POST | `/config` | 推送 API 配置（STT + LLM 连接信息） |
 | GET | `/config` | 查看当前配置（key 脱敏） |
-| POST | `/polish` | 核心管线：音频 → 润色/翻译文本 |
+| POST | `/transcribe` | 独立 STT：音频 → 转写文本 |
+| POST | `/polish` | 核心管线：文本或音频 → 润色/翻译文本 |
 | GET | `/contexts` | 查看场景匹配规则 |
 | POST | `/contexts` | 更新场景匹配规则 |
 
@@ -86,35 +86,35 @@ OpenTypeless/
 
 ## 当前进度
 
-### 已完成
+### Phase 1 — ✅ 已完成
 - [x] 项目初始化（README、MIT LICENSE）
 - [x] Pindrop 源码导入到 `clients/macos/`
-- [x] Engine ↔ Client API 接口契约文档（v1.3）
-- [x] Engine 的 OpenSpec 规格文件（proposal、design、tasks、5 个 spec）
-- [x] 所有 spec 已更新为 provider-agnostic 设计
-- [x] 分支创建和同步
+- [x] Engine ↔ Client API 接口契约文档（v1.4）
+- [x] Engine 开发（FastAPI，6 个端点，68 个测试）— PR #2
+- [x] Engine 升级到 API v1.4（/transcribe、双模式 /polish、stt 可选）
+- [x] Client 改造（EngineClient、SettingsStore、双模式 STT、Settings UI）— PR #1
+- [x] OpenSpec 全部归档（phase1-core-engine、phase1-macos-client、engine-api-v14-upgrade）
 
-### 未完成
-- [ ] **Engine 开发**（phase1-core-engine 分支）— spec 和 tasks 已就绪，代码未开始
-- [ ] **Client spec 创建**（phase1-macos-client 分支）— 还没有改造计划文档
-- [ ] **Client 开发**（phase1-macos-client 分支）— 代码未开始
+### 待规划
+- [ ] **端到端集成测试** — 启动 Engine + Client 跑完整流程
+- [ ] **Phase 2 规划** — 参考 `open-typeless-project-plan.md`
 
 ## 开发指引
 
-### Engine Session
-1. 切到 `phase1-core-engine` 分支
-2. 读 `openspec/changes/phase1-core-engine/tasks.md` 获取任务列表
-3. 读 `docs/api-contract.md` 了解接口契约
-4. 按 tasks.md 中的顺序开发
+代码现在全在 `main` 分支上。新功能开发时从 main 切新分支。
 
-### Client Session
-1. 切到 `phase1-macos-client` 分支
-2. 读 `docs/api-contract.md` 了解要对接的接口
-3. 读 `clients/macos/` 下的 Pindrop 源码，了解现有架构
-4. 需要先创建 client 的改造计划（proposal + tasks）
+### Engine 开发
+- 代码在 `engine/open_typeless/`，测试在 `engine/tests/`
+- 运行测试：`cd engine && .venv/bin/python -m pytest tests/ -v`
+- 启动服务：`cd engine && .venv/bin/python -m open_typeless.cli serve`
+
+### Client 开发
+- 代码在 `clients/macos/Pindrop/`
+- 用 Xcode 打开 `clients/macos/Pindrop.xcodeproj`
 
 ## 用户偏好
 
 - 包管理器：**pnpm**（所有 npm 相关操作使用 pnpm）
+- Python 包管理器：**uv**（不用 pip，venv 由 uv 创建）
 - 语言偏好：中文交流
 - Git：gitstatusd 经常抢 index.lock，需要循环 `rm -f .git/index.lock` 再执行 git 命令
