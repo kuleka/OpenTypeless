@@ -367,4 +367,31 @@ struct NotesStoreTests {
         let results = try notesStore.search(query: "")
         #expect(results.count >= 0)
     }
+
+    // MARK: - Legacy Cleanup Verification
+
+    @Test func createNoteWorksWithoutAIEnhancementService() async throws {
+        // NotesStore no longer depends on AIEnhancementService or SettingsStore
+        let notesStore = makeStore()
+        try await notesStore.create(
+            title: "Manual Note",
+            content: "Created without AI enhancement",
+            tags: ["test"]
+        )
+
+        let notes = try notesStore.fetchAll()
+        #expect(notes.count == 1)
+        #expect(notes.first?.title == "Manual Note")
+        #expect(notes.first?.tags == ["test"])
+    }
+
+    @Test func createNoteAutoTitleWithoutAIMetadata() async throws {
+        // Title should fall back to content truncation without AI metadata generation
+        let notesStore = makeStore()
+        try await notesStore.create(content: "Voice memo about project planning")
+
+        let notes = try notesStore.fetchAll()
+        #expect(notes.count == 1)
+        #expect(notes.first?.title == "Voice memo about project plann...")
+    }
 }

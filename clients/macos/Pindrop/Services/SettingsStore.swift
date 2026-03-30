@@ -395,13 +395,6 @@ final class SettingsStore: ObservableObject {
          static let copyLastTranscriptHotkeyCode = 8
          static let copyLastTranscriptHotkeyModifiers = 0x300
 
-         static let quickCapturePTTHotkey = "⇧⌥Space"
-         static let quickCapturePTTHotkeyCode = 49
-         static let quickCapturePTTHotkeyModifiers = 0xA00  // Shift + Option
-
-         static let quickCaptureToggleHotkey = ""
-         static let quickCaptureToggleHotkeyCode = 0
-         static let quickCaptureToggleHotkeyModifiers = 0
       }
    }
 
@@ -427,18 +420,6 @@ final class SettingsStore: ObservableObject {
    var copyLastTranscriptHotkeyCode: Int = Defaults.Hotkeys.copyLastTranscriptHotkeyCode
    @AppStorage("copyLastTranscriptHotkeyModifiers", store: SettingsStoreRuntime.appStorageStore)
    var copyLastTranscriptHotkeyModifiers: Int = Defaults.Hotkeys.copyLastTranscriptHotkeyModifiers
-   @AppStorage("quickCapturePTTHotkey", store: SettingsStoreRuntime.appStorageStore)
-   var quickCapturePTTHotkey: String = Defaults.Hotkeys.quickCapturePTTHotkey
-   @AppStorage("quickCapturePTTHotkeyCode", store: SettingsStoreRuntime.appStorageStore)
-   var quickCapturePTTHotkeyCode: Int = Defaults.Hotkeys.quickCapturePTTHotkeyCode
-   @AppStorage("quickCapturePTTHotkeyModifiers", store: SettingsStoreRuntime.appStorageStore)
-   var quickCapturePTTHotkeyModifiers: Int = Defaults.Hotkeys.quickCapturePTTHotkeyModifiers
-   @AppStorage("quickCaptureToggleHotkey", store: SettingsStoreRuntime.appStorageStore)
-   var quickCaptureToggleHotkey: String = Defaults.Hotkeys.quickCaptureToggleHotkey
-   @AppStorage("quickCaptureToggleHotkeyCode", store: SettingsStoreRuntime.appStorageStore)
-   var quickCaptureToggleHotkeyCode: Int = Defaults.Hotkeys.quickCaptureToggleHotkeyCode
-   @AppStorage("quickCaptureToggleHotkeyModifiers", store: SettingsStoreRuntime.appStorageStore)
-   var quickCaptureToggleHotkeyModifiers: Int = Defaults.Hotkeys.quickCaptureToggleHotkeyModifiers
     @AppStorage("outputMode", store: SettingsStoreRuntime.appStorageStore) var outputMode: String =
        Defaults.outputMode
     @AppStorage("selectedLanguage", store: SettingsStoreRuntime.appStorageStore)
@@ -1110,12 +1091,6 @@ final class SettingsStore: ObservableObject {
       copyLastTranscriptHotkey = Defaults.Hotkeys.copyLastTranscriptHotkey
       copyLastTranscriptHotkeyCode = Defaults.Hotkeys.copyLastTranscriptHotkeyCode
       copyLastTranscriptHotkeyModifiers = Defaults.Hotkeys.copyLastTranscriptHotkeyModifiers
-      quickCapturePTTHotkey = Defaults.Hotkeys.quickCapturePTTHotkey
-      quickCapturePTTHotkeyCode = Defaults.Hotkeys.quickCapturePTTHotkeyCode
-      quickCapturePTTHotkeyModifiers = Defaults.Hotkeys.quickCapturePTTHotkeyModifiers
-      quickCaptureToggleHotkey = Defaults.Hotkeys.quickCaptureToggleHotkey
-      quickCaptureToggleHotkeyCode = Defaults.Hotkeys.quickCaptureToggleHotkeyCode
-      quickCaptureToggleHotkeyModifiers = Defaults.Hotkeys.quickCaptureToggleHotkeyModifiers
       outputMode = Defaults.outputMode
       selectedLanguage = Defaults.selectedLanguage
       selectedInputDeviceUID = Defaults.selectedInputDeviceUID
@@ -1128,9 +1103,6 @@ final class SettingsStore: ObservableObject {
       selectedEngineLLMProvider = .openRouter
       engineLLMAPIBase = Defaults.engineLLMAPIBase
       engineLLMModel = Defaults.engineLLMModel
-      aiEnhancementEnabled = false
-      aiProvider = AIProvider.openai.rawValue
-      customLocalProviderType = CustomProviderType.custom.rawValue
       floatingIndicatorEnabled = Defaults.floatingIndicatorEnabled
       floatingIndicatorType = Defaults.floatingIndicatorType
       resetPillFloatingIndicatorOffset()
@@ -1224,22 +1196,6 @@ final class SettingsStore: ObservableObject {
          copyLastTranscriptHotkey = hotkey
          copyLastTranscriptHotkeyCode = keyCode
          copyLastTranscriptHotkeyModifiers = modifiers
-      }
-   }
-
-   func updateQuickCapturePTTHotkey(_ hotkey: String, keyCode: Int, modifiers: Int) {
-      performHotkeyUpdate {
-         quickCapturePTTHotkey = hotkey
-         quickCapturePTTHotkeyCode = keyCode
-         quickCapturePTTHotkeyModifiers = modifiers
-      }
-   }
-
-   func updateQuickCaptureToggleHotkey(_ hotkey: String, keyCode: Int, modifiers: Int) {
-      performHotkeyUpdate {
-         quickCaptureToggleHotkey = hotkey
-         quickCaptureToggleHotkeyCode = keyCode
-         quickCaptureToggleHotkeyModifiers = modifiers
       }
    }
 
@@ -1514,6 +1470,11 @@ final class SettingsStore: ObservableObject {
    private func migrateLegacyEngineLLMSettingsIfNeeded() {
       guard !engineSettingsMigratedFromLegacyAI else { return }
       defer { engineSettingsMigratedFromLegacyAI = true }
+
+      // Only migrate when Engine LLM settings have not yet been configured
+      if let existingKey = configuredEngineLLMAPIKey(), !existingKey.isEmpty {
+         return
+      }
 
       guard let legacyPreset = legacyEngineLLMProviderPreset() else { return }
       guard let legacyAPIBase = apiEndpoint?.trimmingCharacters(in: .whitespacesAndNewlines),

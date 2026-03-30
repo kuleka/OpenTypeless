@@ -150,8 +150,6 @@ struct HotkeySettingsSnapshot: Equatable {
     let pushToTalk: HotkeyBindingSnapshot
     let toggle: HotkeyBindingSnapshot
     let copyLastTranscript: HotkeyBindingSnapshot
-    let quickCapturePTT: HotkeyBindingSnapshot
-    let quickCaptureToggle: HotkeyBindingSnapshot
 }
 
 struct EngineProviderSettingsSnapshot: Equatable {
@@ -232,8 +230,6 @@ final class AppCoordinator {
         case statusBarMenu = "status-bar-menu"
         case hotkeyToggle = "hotkey-toggle"
         case hotkeyPushToTalk = "hotkey-push-to-talk"
-        case hotkeyQuickCapturePTT = "hotkey-quick-capture-ptt"
-        case hotkeyQuickCaptureToggle = "hotkey-quick-capture-toggle"
         case floatingIndicatorStart = "floating-indicator-start"
         case floatingIndicatorStop = "floating-indicator-stop"
         case pillIndicatorStop = "pill-indicator-stop"
@@ -293,7 +289,6 @@ final class AppCoordinator {
     let audioRecorder: AudioRecorder
     let transcriptionService: TranscriptionService
     let modelManager: ModelManager
-    let aiEnhancementService: AIEnhancementService
     let hotkeyManager: HotkeyManager
     let launchAtLoginManager: LaunchAtLoginManager
     let updateService: UpdateService
@@ -324,13 +319,8 @@ final class AppCoordinator {
     let onboardingController: OnboardingWindowController
     let splashController: SplashWindowController
     let mainWindowController: MainWindowController
-    let noteEditorWindowController: NoteEditorWindowController
     let toastWindowController: ToastWindowController
     
-    // MARK: - Quick Capture State
-    
-    private var isQuickCaptureMode = false
-    private var quickCaptureTranscription: String?
     private var isStreamingTranscriptionSessionActive = false
     private var streamingAudioProcessingTask: Task<Void, Never>?
     private var streamingInsertionUpdateTask: Task<Void, Never>?
@@ -432,7 +422,6 @@ final class AppCoordinator {
             }
         )
         self.modelManager = ModelManager()
-        self.aiEnhancementService = AIEnhancementService()
         self.hotkeyManager = HotkeyManager()
         self.launchAtLoginManager = LaunchAtLoginManager()
         self.updateService = UpdateService()
@@ -479,7 +468,7 @@ final class AppCoordinator {
         self.outputManager = outputManager ?? OutputManager(outputMode: initialOutputMode)
         self.historyStore = HistoryStore(modelContext: modelContext)
         self.dictionaryStore = DictionaryStore(modelContext: modelContext)
-        self.notesStore = NotesStore(modelContext: modelContext, aiEnhancementService: aiEnhancementService, settingsStore: settingsStore)
+        self.notesStore = NotesStore(modelContext: modelContext)
         self.contextCaptureService = ContextCaptureService()
         self.contextEngineService = ContextEngineService()
         self.toastWindowController = resolvedToastWindowController
@@ -517,8 +506,6 @@ final class AppCoordinator {
         self.splashController = SplashWindowController(state: splashState)
         self.mainWindowController = MainWindowController()
         self.mainWindowController.setModelContainer(modelContainer)
-        self.noteEditorWindowController = NoteEditorWindowController()
-        self.noteEditorWindowController.setModelContainer(modelContainer)
         self.mainWindowController.configureTranscribeFeature(
             state: mediaTranscriptionState,
             modelManager: modelManager,
@@ -1440,79 +1427,6 @@ final class AppCoordinator {
             }
         }
 
-        if !settingsStore.quickCapturePTTHotkey.isEmpty,
-           let binding = validatedHotkeyBinding(
-               displayName: "Note Capture (Push-to-Talk)",
-               hotkeyString: settingsStore.quickCapturePTTHotkey,
-               keyCodeValue: settingsStore.quickCapturePTTHotkeyCode,
-               modifiersValue: settingsStore.quickCapturePTTHotkeyModifiers
-           ) {
-            Log.hotkey.info("Registering quick-capture-ptt: keyCode=\(binding.keyCode), modifiers=0x\(String(binding.modifiers.rawValue, radix: 16)), string=\(self.settingsStore.quickCapturePTTHotkey)")
-
-            if canRegisterHotkey(
-                identifier: "quick-capture-ptt",
-                displayName: "Note Capture (Push-to-Talk)",
-                hotkeyString: settingsStore.quickCapturePTTHotkey,
-                keyCode: binding.keyCode,
-                modifiers: binding.modifiers,
-                registrationState: &registrationState
-            ) {
-                let didRegister = hotkeyManager.registerHotkey(
-                    keyCode: binding.keyCode,
-                    modifiers: binding.modifiers,
-                    identifier: "quick-capture-ptt",
-                    mode: .pushToTalk,
-                    onKeyDown: { [weak self] in
-                        Task { @MainActor in
-                            await self?.handleQuickCapturePTTStart()
-                        }
-                    },
-                    onKeyUp: { [weak self] in
-                        Task { @MainActor in
-                            await self?.handleQuickCapturePTTEnd()
-                        }
-                    }
-                )
-
-                if !didRegister {
-                    handleHotkeyRegistrationFailure(displayName: "Note Capture (Push-to-Talk)", hotkeyString: settingsStore.quickCapturePTTHotkey)
-                }
-            }
-        }
-
-        if !settingsStore.quickCaptureToggleHotkey.isEmpty,
-           let binding = validatedHotkeyBinding(
-               displayName: "Note Capture (Toggle)",
-               hotkeyString: settingsStore.quickCaptureToggleHotkey,
-               keyCodeValue: settingsStore.quickCaptureToggleHotkeyCode,
-               modifiersValue: settingsStore.quickCaptureToggleHotkeyModifiers
-           ) {
-            Log.hotkey.info("Registering quick-capture-toggle: keyCode=\(binding.keyCode), modifiers=0x\(String(binding.modifiers.rawValue, radix: 16)), string=\(self.settingsStore.quickCaptureToggleHotkey)")
-            if canRegisterHotkey(
-                identifier: "quick-capture-toggle",
-                displayName: "Note Capture (Toggle)",
-                hotkeyString: settingsStore.quickCaptureToggleHotkey,
-                keyCode: binding.keyCode,
-                modifiers: binding.modifiers,
-                registrationState: &registrationState
-            ) {
-                let didRegister = hotkeyManager.registerHotkey(
-                    keyCode: binding.keyCode,
-                    modifiers: binding.modifiers,
-                    identifier: "quick-capture-toggle",
-                    mode: .toggle,
-                    onKeyDown: { [weak self] in
-                        Task { @MainActor in
-                            await self?.handleQuickCaptureToggle()
-                        }
-                    },
-                    onKeyUp: nil
-                )
-                if !didRegister {
-                    handleHotkeyRegistrationFailure(displayName: "Note Capture (Toggle)", hotkeyString: settingsStore.quickCaptureToggleHotkey)
-                }
-            }
-    }
     }
     private func validatedHotkeyBinding(
         displayName: String,
@@ -1641,16 +1555,6 @@ final class AppCoordinator {
                     hotkey: settingsStore.copyLastTranscriptHotkey,
                     keyCode: settingsStore.copyLastTranscriptHotkeyCode,
                     modifiers: settingsStore.copyLastTranscriptHotkeyModifiers
-                ),
-                quickCapturePTT: HotkeyBindingSnapshot(
-                    hotkey: settingsStore.quickCapturePTTHotkey,
-                    keyCode: settingsStore.quickCapturePTTHotkeyCode,
-                    modifiers: settingsStore.quickCapturePTTHotkeyModifiers
-                ),
-                quickCaptureToggle: HotkeyBindingSnapshot(
-                    hotkey: settingsStore.quickCaptureToggleHotkey,
-                    keyCode: settingsStore.quickCaptureToggleHotkeyCode,
-                    modifiers: settingsStore.quickCaptureToggleHotkeyModifiers
                 )
             ),
             engine: currentEngineObservationSnapshot(),
@@ -2228,231 +2132,6 @@ final class AppCoordinator {
         }
     }
 
-    // MARK: - Quick Capture Handlers (Push-to-Talk)
-
-    private func handleQuickCapturePTTStart() async {
-        guard !isRecording && !isProcessing else { return }
-
-        isQuickCaptureMode = true
-        quickCaptureTranscription = nil
-
-        do {
-            try await startRecording(source: .hotkeyQuickCapturePTT)
-        } catch {
-            self.error = error
-            isQuickCaptureMode = false
-            audioRecorder.resetAudioEngine()
-            Log.app.error("Failed to start quick capture recording: \(error)")
-            handleRecordingStartFailure(error, source: .hotkeyQuickCapturePTT)
-        }
-    }
-
-    private func handleQuickCapturePTTEnd() async {
-        guard isRecording && isQuickCaptureMode else { return }
-
-        do {
-            if let enhancedNote = try await stopRecordingAndTranscribeForQuickCapture() {
-                openNoteEditorWithEnhancedNote(enhancedNote)
-            }
-        } catch {
-            self.error = error
-            audioRecorder.resetAudioEngine()
-            Log.app.error("Failed to stop quick capture recording: \(error)")
-        }
-
-        isQuickCaptureMode = false
-    }
-
-    // MARK: - Quick Capture Handlers (Toggle)
-
-    private func handleQuickCaptureToggle() async {
-        if isRecording && isQuickCaptureMode {
-            do {
-                if let enhancedNote = try await stopRecordingAndTranscribeForQuickCapture() {
-                    openNoteEditorWithEnhancedNote(enhancedNote)
-                }
-            } catch {
-                self.error = error
-                audioRecorder.resetAudioEngine()
-                Log.app.error("Failed to stop quick capture recording: \(error)")
-            }
-            isQuickCaptureMode = false
-        } else if !isRecording && !isProcessing {
-            isQuickCaptureMode = true
-            quickCaptureTranscription = nil
-
-            do {
-                try await startRecording(source: .hotkeyQuickCaptureToggle)
-            } catch {
-                self.error = error
-                isQuickCaptureMode = false
-                audioRecorder.resetAudioEngine()
-                Log.app.error("Failed to start quick capture recording: \(error)")
-                handleRecordingStartFailure(error, source: .hotkeyQuickCaptureToggle)
-            }
-        }
-    }
-
-    private func stopRecordingAndTranscribeForQuickCapture() async throws -> AIEnhancementService.EnhancedNote? {
-        guard recordingStartTime != nil else {
-            Log.app.warning("stopRecordingAndTranscribeForQuickCapture called but recordingStartTime is nil")
-            return nil
-        }
-
-        isRecording = false
-        mediaPauseService.endRecordingSession()
-        suspendLiveContextSessionUpdates()
-        isProcessing = true
-
-        statusBarController.setProcessingState()
-
-        transitionRecordingIndicatorToProcessing()
-
-        defer {
-            resetProcessingState()
-        }
-
-        let audioData: Data
-        do {
-            audioData = try await audioRecorder.stopRecording()
-        } catch {
-            Log.app.error("Failed to stop recording: \(error)")
-            throw error
-        }
-
-        guard !audioData.isEmpty else {
-            Log.app.warning("No audio data recorded")
-            handleNoSpeechDetected(context: "quick-capture")
-            return nil
-        }
-
-        let diarizationEnabled = Self.shouldUseSpeakerDiarization(
-            diarizationFeatureEnabled: settingsStore.diarizationFeatureEnabled,
-            isStreamingSessionActive: false
-        )
-        Log.app.info("Quick capture speaker diarization \(diarizationEnabled ? "enabled" : "disabled")")
-
-        let transcriptionOutput: TranscriptionOutput
-        do {
-            transcriptionOutput = try await transcriptionService.transcribe(
-                audioData: audioData,
-                diarizationEnabled: diarizationEnabled,
-                options: TranscriptionOptions(language: settingsStore.selectedAppLanguage)
-            )
-        } catch let error as TranscriptionService.TranscriptionError {
-            Log.app.error("Transcription failed: \(error)")
-            let message = if case .modelNotLoaded = error {
-                "No model loaded. Please download a model in Settings."
-            } else {
-                "Transcription failed: \(error.localizedDescription)"
-            }
-            toastService.show(
-                ToastPayload(message: message, style: .error)
-            )
-            throw error
-        } catch {
-            Log.app.error("Transcription failed: \(error)")
-            toastService.show(
-                ToastPayload(message: "Transcription failed: \(error.localizedDescription)", style: .error)
-            )
-            throw error
-        }
-
-        if diarizationEnabled {
-            let segmentCount = transcriptionOutput.diarizedSegments?.count ?? 0
-            if segmentCount > 0 {
-                Log.app.info("Quick capture diarization produced \(segmentCount) segments")
-            } else {
-                Log.app.info("Quick capture diarization produced no attributed segments")
-            }
-        }
-
-        let transcribedText = transcriptionOutput.text
-
-        var (textAfterReplacements, appliedReplacements) = try dictionaryStore.applyReplacements(to: transcribedText)
-        textAfterReplacements = normalizedTranscriptionText(textAfterReplacements)
-
-        guard !isTranscriptionEffectivelyEmpty(textAfterReplacements) else {
-            handleNoSpeechDetected(context: "quick-capture")
-            return nil
-        }
-        self.lastAppliedReplacements = appliedReplacements
-
-        if !appliedReplacements.isEmpty {
-            Log.app.info("Applied \(appliedReplacements.count) dictionary replacements")
-        }
-
-        if settingsStore.aiEnhancementEnabled,
-           let apiEndpoint = settingsStore.apiEndpoint,
-           settingsStore.currentAIProviderHasRequiredAPIKey() {
-            do {
-                let apiKey = settingsStore.configuredAPIKeyForCurrentAIProvider()
-                let notePrompt = settingsStore.noteEnhancementPrompt
-                let vocabularyWords = try dictionaryStore.fetchAllVocabularyWords().map(\.word)
-                let replacementCorrections = appliedReplacements.map {
-                    AIEnhancementService.ContextMetadata.ReplacementCorrection(
-                        original: $0.original,
-                        replacement: $0.replacement
-                    )
-                }
-                let enhancementContext = AIEnhancementService.ContextMetadata(
-                    hasClipboardText: false,
-                    clipboardText: nil,
-                    hasClipboardImage: false,
-                    appContext: nil,
-                    vocabularyWords: vocabularyWords,
-                    replacementCorrections: replacementCorrections
-                )
-
-                let existingTags = (try? notesStore.getAllUniqueTags()) ?? []
-                let enhancedNote = try await aiEnhancementService.enhanceNote(
-                    content: textAfterReplacements,
-                    apiEndpoint: apiEndpoint,
-                    apiKey: apiKey,
-                    model: settingsStore.aiModel,
-                    contentPrompt: notePrompt,
-                    generateMetadata: true,
-                    existingTags: existingTags,
-                    context: enhancementContext,
-                    provider: settingsStore.currentAIProvider
-                )
-                Log.app.info("Note enhancement completed: title='\(enhancedNote.title)', tags=\(enhancedNote.tags.count)")
-                let normalizedEnhancedContent = normalizedTranscriptionText(enhancedNote.content)
-                guard !isTranscriptionEffectivelyEmpty(normalizedEnhancedContent) else {
-                    handleNoSpeechDetected(context: "quick-capture")
-                    return nil
-                }
-                return AIEnhancementService.EnhancedNote(
-                    content: normalizedEnhancedContent,
-                    title: enhancedNote.title,
-                    tags: enhancedNote.tags
-                )
-            } catch {
-                Log.app.error("Note enhancement failed: \(error)")
-            }
-        }
-
-        let fallbackTitle = aiEnhancementService.generateFallbackTitle(from: textAfterReplacements)
-        return AIEnhancementService.EnhancedNote(
-            content: textAfterReplacements,
-            title: fallbackTitle,
-            tags: []
-        )
-    }
-
-    private func openNoteEditorWithEnhancedNote(_ enhancedNote: AIEnhancementService.EnhancedNote) {
-        let newNote = NoteSchema.Note(
-            title: enhancedNote.title,
-            content: enhancedNote.content,
-            tags: enhancedNote.tags,
-            sourceTranscriptionID: nil
-        )
-
-        noteEditorWindowController.show(note: newNote, isNewNote: true)
-
-        Log.app.info("Opened note editor with enhanced note")
-    }
-
     private func handleToggleRecording(source: RecordingTriggerSource) async {
         if isRecording {
             do {
@@ -2618,14 +2297,10 @@ final class AppCoordinator {
 
     static func shouldUseStreamingTranscription(
         streamingFeatureEnabled: Bool,
-        outputMode: OutputMode,
-        aiEnhancementEnabled: Bool,
-        isQuickCaptureMode: Bool
+        outputMode: OutputMode
     ) -> Bool {
         streamingFeatureEnabled &&
-            outputMode == .directInsert &&
-            !aiEnhancementEnabled &&
-            !isQuickCaptureMode
+            outputMode == .directInsert
     }
 
     private func encodeDiarizationSegmentsJSON(_ segments: [DiarizedTranscriptSegment]?) -> String? {
@@ -2647,9 +2322,7 @@ final class AppCoordinator {
     private func shouldUseStreamingTranscriptionForCurrentSession() -> Bool {
         Self.shouldUseStreamingTranscription(
             streamingFeatureEnabled: settingsStore.streamingFeatureEnabled,
-            outputMode: outputManager.outputMode,
-            aiEnhancementEnabled: settingsStore.aiEnhancementEnabled,
-            isQuickCaptureMode: isQuickCaptureMode
+            outputMode: outputManager.outputMode
         )
     }
 
@@ -2665,7 +2338,7 @@ final class AppCoordinator {
     private func handleRecordingStartFailure(_ error: Error, source: RecordingTriggerSource) {
         let isHotkeySource: Bool
         switch source {
-        case .hotkeyToggle, .hotkeyPushToTalk, .hotkeyQuickCapturePTT, .hotkeyQuickCaptureToggle:
+        case .hotkeyToggle, .hotkeyPushToTalk:
             isHotkeySource = true
         default:
             isHotkeySource = false
@@ -2685,9 +2358,7 @@ final class AppCoordinator {
         guard shouldUseStreaming else {
             let reasons = [
                 settingsStore.streamingFeatureEnabled ? nil : "feature-disabled",
-                outputManager.outputMode == .directInsert ? nil : "output-mode-not-directInsert",
-                settingsStore.aiEnhancementEnabled ? "ai-enhancement-enabled" : nil,
-                isQuickCaptureMode ? "quick-capture-mode" : nil
+                outputManager.outputMode == .directInsert ? nil : "output-mode-not-directInsert"
             ].compactMap { $0 }
             Log.transcription.info("Streaming transcription disabled for session: \(reasons.joined(separator: ","))")
             isStreamingTranscriptionSessionActive = false

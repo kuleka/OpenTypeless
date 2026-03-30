@@ -37,64 +37,22 @@ final class NotesStore {
     }
     
     private let modelContext: ModelContext
-    private let aiEnhancementService: AIEnhancementService?
-    private let settingsStore: SettingsStore?
-    
+
     init(
-        modelContext: ModelContext,
-        aiEnhancementService: AIEnhancementService? = nil,
-        settingsStore: SettingsStore? = nil
+        modelContext: ModelContext
     ) {
         self.modelContext = modelContext
-        self.aiEnhancementService = aiEnhancementService
-        self.settingsStore = settingsStore
     }
     
     func create(
         title: String? = nil,
         content: String,
         tags: [String]? = nil,
-        sourceTranscriptionID: UUID? = nil,
-        generateMetadata: Bool = false
+        sourceTranscriptionID: UUID? = nil
     ) async throws {
         var finalTitle = title
         var finalTags = tags
-        
-        // Generate metadata if requested and AI enhancement is enabled
-        if generateMetadata,
-           let settings = settingsStore,
-           settings.aiEnhancementEnabled,
-           let aiService = aiEnhancementService {
-            if let endpoint = settings.apiEndpoint,
-               settings.currentAIProviderHasRequiredAPIKey() {
-                do {
-                    let apiKey = settings.configuredAPIKeyForCurrentAIProvider()
-                    let existingTags = (try? getAllUniqueTags()) ?? []
-                    let metadata = try await aiService.generateNoteMetadata(
-                        content: content,
-                        apiEndpoint: endpoint,
-                        apiKey: apiKey,
-                        model: settings.aiModel,
-                        existingTags: existingTags,
-                        provider: settings.currentAIProvider
-                    )
-                    
-                    // Use generated title if no explicit title provided
-                    if finalTitle == nil {
-                        finalTitle = metadata.title
-                    }
-                    
-                    // Use generated tags if no explicit tags provided
-                    if finalTags == nil {
-                        finalTags = metadata.tags
-                    }
-                } catch {
-                    Log.aiEnhancement.warning("Failed to generate note metadata: \(error.localizedDescription)")
-                    // Fall back to default behavior on AI failure
-                }
-            }
-        }
-        
+
         // Fall back to first 30 chars of content if no title
         if finalTitle == nil || finalTitle?.isEmpty == true {
             let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)

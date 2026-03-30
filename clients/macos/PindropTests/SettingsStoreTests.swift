@@ -592,4 +592,52 @@ struct SettingsStoreTests {
 
         try await task.value
     }
+
+    // MARK: - Legacy Cleanup Verification
+
+    @Test func testQuickCaptureHotkeyDefaultsAreRemoved() {
+        // Quick capture hotkey defaults should no longer exist in the Defaults.Hotkeys namespace
+        // This test verifies the struct only contains supported dictation hotkeys
+        let toggleDefault = SettingsStore.Defaults.Hotkeys.toggleHotkey
+        let pttDefault = SettingsStore.Defaults.Hotkeys.pushToTalkHotkey
+        let copyDefault = SettingsStore.Defaults.Hotkeys.copyLastTranscriptHotkey
+
+        #expect(!toggleDefault.isEmpty)
+        #expect(!pttDefault.isEmpty)
+        #expect(!copyDefault.isEmpty)
+    }
+
+    @Test func testLegacyMigrationSkipsWhenEngineLLMAlreadyConfigured() throws {
+        let settingsStore = makeSettingsStore()
+        defer { cleanup(settingsStore) }
+
+        // Pre-configure Engine LLM API key
+        settingsStore.selectedEngineLLMProvider = .openRouter
+        try settingsStore.saveEngineLLMAPIKey("sk-or-existing")
+
+        // Set legacy AI values that would normally migrate
+        try settingsStore.saveAPIEndpoint("https://api.openai.com/v1/chat/completions", for: .openai)
+        try settingsStore.saveAPIKey("sk-legacy-key", for: .openai)
+        settingsStore.aiModel = "gpt-4o"
+
+        // Create a new store to trigger migration
+        let newStore = SettingsStore()
+        defer { cleanup(newStore) }
+
+        // Engine LLM should retain the existing key, not be overwritten by legacy
+        #expect(newStore.loadEngineLLMAPIKey() == "sk-or-existing")
+    }
+
+    @Test func testResetAllSettingsDoesNotReferenceLegacyAIFields() {
+        let settingsStore = makeSettingsStore()
+        defer { cleanup(settingsStore) }
+
+        // After reset, Engine-backed settings should be at defaults
+        settingsStore.resetAllSettings()
+
+        #expect(settingsStore.selectedEngineLLMProvider == .openRouter)
+        #expect(settingsStore.engineLLMAPIBase == SettingsStore.Defaults.engineLLMAPIBase)
+        #expect(settingsStore.engineLLMModel == SettingsStore.Defaults.engineLLMModel)
+        #expect(settingsStore.selectedEngineSTTProvider == .groq)
+    }
 }

@@ -95,6 +95,14 @@ OpenTypeless/
 - [x] Client 改造（EngineClient、SettingsStore、双模式 STT、Settings UI）— PR #1
 - [x] OpenSpec 全部归档（phase1-core-engine、phase1-macos-client、engine-api-v14-upgrade）
 
+### Legacy Client Cleanup — ✅ 已完成
+
+- [x] 退役 quick capture note 工作流（快捷键、录音状态、笔记编辑器启动）
+- [x] 从 AppCoordinator 移除 AIEnhancementService 运行时依赖
+- [x] 合并设置到 Engine-backed 配置（legacy AI 迁移 + 移除旧 UI）
+- [x] 简化 NotesStore（保留 CRUD，移除 AI 元数据生成）
+- [x] 更新测试覆盖退役功能
+
 ### 待规划
 - [ ] **端到端集成测试** — 启动 Engine + Client 跑完整流程
 - [ ] **Phase 2 规划** — 参考 `open-typeless-project-plan.md`

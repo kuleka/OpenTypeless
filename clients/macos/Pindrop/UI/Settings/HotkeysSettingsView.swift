@@ -15,8 +15,6 @@ struct HotkeysSettingsView: View {
     @State private var isRecordingToggle = false
     @State private var isRecordingPushToTalk = false
     @State private var isRecordingCopyLastTranscript = false
-    @State private var isRecordingQuickCapturePTT = false
-    @State private var isRecordingQuickCaptureToggle = false
     @State private var keyMonitor: Any?
     @State private var pendingHotkeyCapture: PendingHotkeyCapture?
     @State private var activeModifierKeyCodes = Set<UInt16>()
@@ -33,8 +31,6 @@ struct HotkeysSettingsView: View {
             toggleHotkeyCard
             pushToTalkCard
             copyLastTranscriptCard
-            quickCapturePTTCard
-            quickCaptureToggleCard
         }
         .onDisappear {
             stopRecording()
@@ -98,56 +94,15 @@ struct HotkeysSettingsView: View {
         }
     }
     
-    private var quickCapturePTTCard: some View {
-        SettingsCard(title: localized("Note Capture (Push-to-Talk)", locale: locale), icon: "hand.tap", detail: localized("Capture directly into the note editor with a hold-to-record flow.", locale: locale)) {
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-                Text(localized("Hold to record, release to open note editor with transcription", locale: locale))
-                    .font(AppTypography.caption)
-                    .foregroundStyle(AppColors.textSecondary)
-                
-                HotkeyRecorderRow(
-                    hotkey: settings.quickCapturePTTHotkey,
-                    isRecording: isRecordingQuickCapturePTT,
-                    onRecord: { startRecording(forQuickCapturePTT: true) },
-                    onClear: {
-                        settings.updateQuickCapturePTTHotkey("", keyCode: 0, modifiers: 0)
-                    }
-                )
-            }
-        }
-    }
-
-    private var quickCaptureToggleCard: some View {
-        SettingsCard(title: localized("Note Capture (Toggle)", locale: locale), icon: "note.text", detail: localized("Use a tap-to-start, tap-to-finish shortcut for note capture.", locale: locale)) {
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-                Text(localized("Press to start recording, press again to open note editor", locale: locale))
-                    .font(AppTypography.caption)
-                    .foregroundStyle(AppColors.textSecondary)
-                
-                HotkeyRecorderRow(
-                    hotkey: settings.quickCaptureToggleHotkey,
-                    isRecording: isRecordingQuickCaptureToggle,
-                    onRecord: { startRecording(forQuickCaptureToggle: true) },
-                    onClear: {
-                        settings.updateQuickCaptureToggleHotkey("", keyCode: 0, modifiers: 0)
-                    }
-                )
-            }
-        }
-    }
     
     private func startRecording(
         forToggle: Bool = false,
-        forCopyLastTranscript: Bool = false,
-        forQuickCapturePTT: Bool = false,
-        forQuickCaptureToggle: Bool = false
+        forCopyLastTranscript: Bool = false
     ) {
         stopRecording()
         isRecordingToggle = forToggle
-        isRecordingPushToTalk = !forToggle && !forCopyLastTranscript && !forQuickCapturePTT && !forQuickCaptureToggle
+        isRecordingPushToTalk = !forToggle && !forCopyLastTranscript
         isRecordingCopyLastTranscript = forCopyLastTranscript
-        isRecordingQuickCapturePTT = forQuickCapturePTT
-        isRecordingQuickCaptureToggle = forQuickCaptureToggle
         HotkeyManager.setHotkeyCaptureInProgress(true)
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { event in
             if event.type == .keyDown && event.keyCode == 53 {
@@ -183,9 +138,7 @@ struct HotkeysSettingsView: View {
                     self.applyCapturedHotkey(
                         capture,
                         forToggle: forToggle,
-                        forCopyLastTranscript: forCopyLastTranscript,
-                        forQuickCapturePTT: forQuickCapturePTT,
-                        forQuickCaptureToggle: forQuickCaptureToggle
+                        forCopyLastTranscript: forCopyLastTranscript
                     )
                     self.stopRecording()
                 }
@@ -220,9 +173,7 @@ struct HotkeysSettingsView: View {
                 self.applyCapturedHotkey(
                     capture,
                     forToggle: forToggle,
-                    forCopyLastTranscript: forCopyLastTranscript,
-                    forQuickCapturePTT: forQuickCapturePTT,
-                    forQuickCaptureToggle: forQuickCaptureToggle
+                    forCopyLastTranscript: forCopyLastTranscript
                 )
                 self.stopRecording()
                 return nil
@@ -234,18 +185,12 @@ struct HotkeysSettingsView: View {
     private func applyCapturedHotkey(
         _ capture: PendingHotkeyCapture,
         forToggle: Bool,
-        forCopyLastTranscript: Bool,
-        forQuickCapturePTT: Bool,
-        forQuickCaptureToggle: Bool
+        forCopyLastTranscript: Bool
     ) {
         if forToggle {
             settings.updateToggleHotkey(capture.hotkeyString, keyCode: Int(capture.keyCode), modifiers: Int(capture.modifiers))
         } else if forCopyLastTranscript {
             settings.updateCopyLastTranscriptHotkey(capture.hotkeyString, keyCode: Int(capture.keyCode), modifiers: Int(capture.modifiers))
-        } else if forQuickCapturePTT {
-            settings.updateQuickCapturePTTHotkey(capture.hotkeyString, keyCode: Int(capture.keyCode), modifiers: Int(capture.modifiers))
-        } else if forQuickCaptureToggle {
-            settings.updateQuickCaptureToggleHotkey(capture.hotkeyString, keyCode: Int(capture.keyCode), modifiers: Int(capture.modifiers))
         } else {
             settings.updatePushToTalkHotkey(capture.hotkeyString, keyCode: Int(capture.keyCode), modifiers: Int(capture.modifiers))
         }
@@ -283,8 +228,6 @@ struct HotkeysSettingsView: View {
         isRecordingToggle = false
         isRecordingPushToTalk = false
         isRecordingCopyLastTranscript = false
-        isRecordingQuickCapturePTT = false
-        isRecordingQuickCaptureToggle = false
     }
     
     private func buildHotkeyString(from event: NSEvent) -> String {

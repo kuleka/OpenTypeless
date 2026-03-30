@@ -199,45 +199,21 @@ struct AppCoordinatorContextFlowTests {
         #expect(
             AppCoordinator.shouldUseStreamingTranscription(
                 streamingFeatureEnabled: true,
-                outputMode: .directInsert,
-                aiEnhancementEnabled: false,
-                isQuickCaptureMode: false
+                outputMode: .directInsert
             )
         )
 
         #expect(
             AppCoordinator.shouldUseStreamingTranscription(
                 streamingFeatureEnabled: false,
-                outputMode: .directInsert,
-                aiEnhancementEnabled: false,
-                isQuickCaptureMode: false
+                outputMode: .directInsert
             ) == false
         )
 
         #expect(
             AppCoordinator.shouldUseStreamingTranscription(
                 streamingFeatureEnabled: true,
-                outputMode: .clipboard,
-                aiEnhancementEnabled: false,
-                isQuickCaptureMode: false
-            ) == false
-        )
-
-        #expect(
-            AppCoordinator.shouldUseStreamingTranscription(
-                streamingFeatureEnabled: true,
-                outputMode: .directInsert,
-                aiEnhancementEnabled: true,
-                isQuickCaptureMode: false
-            ) == false
-        )
-
-        #expect(
-            AppCoordinator.shouldUseStreamingTranscription(
-                streamingFeatureEnabled: true,
-                outputMode: .directInsert,
-                aiEnhancementEnabled: false,
-                isQuickCaptureMode: true
+                outputMode: .clipboard
             ) == false
         )
     }
