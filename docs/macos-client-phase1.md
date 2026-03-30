@@ -105,10 +105,11 @@ record audio
 
 ### Remaining Legacy Areas
 
-Phase 1 did not remove every older client-only path. In particular:
+Phase 1 did not remove every older client-only path. A subsequent cleanup pass addressed the major items:
 
-- `AIEnhancementService` still exists for a few legacy auxiliary flows
-- quick capture note remains a separate legacy path
+- `AIEnhancementService` has been deleted; `LiveSessionContext` was extracted to its own file
+- quick capture note workflow has been fully retired
+- Notes subsystem has been entirely removed
 - the app target and many file paths still use the `Pindrop` name
 
 ## Testing

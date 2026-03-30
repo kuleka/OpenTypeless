@@ -57,7 +57,7 @@ Important components already in the repo:
 
 Important migration note:
 
-- `AIEnhancementService` still exists because a few auxiliary legacy app flows have not been migrated yet.
+- `AIEnhancementService` and the Notes subsystem have been fully removed in the legacy cleanup pass.
 - Xcode targets and many path names still use `Pindrop` for continuity.
 
 ## Engine Runtime Readiness

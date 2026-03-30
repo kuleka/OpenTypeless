@@ -342,7 +342,7 @@ Tests are isolated from user settings. The test plans set `PINDROP_TEST_MODE=1`,
    modelContainer = try ModelContainer(for: schema, configurations: [config])
    ```
 
-5. **For network-dependent code**, use `MockURLSession` (see `AIEnhancementServiceTests.swift`).
+5. **For network-dependent code**, use `MockURLSession` (see `TestSupport.swift`).
 
 6. **Tests must pass on CI** (macOS runners with no microphone, no permission dialogs). Never depend on real hardware.
 
@@ -382,7 +382,7 @@ AppCoordinator.handleToggleRecording()
     → OutputManager (clipboard / direct insert)
 ```
 
-Some auxiliary paths such as quick capture note still retain legacy behavior and should be treated separately from the main dictation pipeline.
+Legacy auxiliary paths (quick capture note, AIEnhancementService, Notes) have been fully removed. The dictation pipeline above is now the only active flow.
 
 ### Adding New Views
 

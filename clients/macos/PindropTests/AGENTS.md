@@ -1,6 +1,6 @@
 # TEST SUITE
 
-XCTest suite covering all 9 services. 10 test files, ~2000 lines.
+Swift Testing suite covering all 8 services. ~450 tests across multiple files.
 
 ## STRUCTURE
 
@@ -14,8 +14,12 @@ PindropTests/
 ├── HistoryStoreTests.swift         # CRUD, search, export formats
 ├── SettingsStoreTests.swift        # AppStorage, Keychain
 ├── PermissionManagerTests.swift    # Mic, Accessibility checks
-├── AIEnhancementServiceTests.swift # Mock URLSession, API validation
+├── PolishServiceTests.swift        # MockURLSession, Engine polish API
+├── AppCoordinatorContextFlowTests.swift # Context flow, streaming logic
+├── AppCoordinatorEnginePipelineTests.swift # Engine pipeline integration
+├── UpdateServiceTests.swift        # Update service wiring
 ├── PindropTests.swift              # Base template
+├── TestSupport.swift               # MockURLSession, ManualTaskScheduler
 └── TestHelpers/                    # Protocol mocks for hardware dependencies
     ├── MockPermissionProvider.swift    # Mock for PermissionProviding protocol
     └── MockAudioCaptureBackend.swift   # Mock for AudioCaptureBackend protocol
@@ -27,25 +31,13 @@ PindropTests/
 
 ```swift
 @MainActor
-final class ServiceTests: XCTestCase {
-    override func setUp() async throws { }
-
-    func testAsync() async throws {
+@Suite
+struct ServiceTests {
+    @Test func testAsync() async throws {
         let result = try await service.method()
-        XCTAssertEqual(result, expected)
+        #expect(result == expected)
     }
 }
-```
-
-### Expectation-Based (for callbacks)
-
-```swift
-let expectation = expectation(description: "Callback fired")
-Task {
-    try await sut.startRecording()
-    expectation.fulfill()
-}
-wait(for: [expectation], timeout: 5.0)
 ```
 
 ### In-Memory SwiftData
@@ -55,7 +47,7 @@ let config = ModelConfiguration(isStoredInMemoryOnly: true)
 modelContainer = try ModelContainer(for: schema, configurations: [config])
 ```
 
-### Mock URLSession (AIEnhancementService)
+### Mock URLSession (TestSupport.swift)
 
 ```swift
 class MockURLSession: URLSessionProtocol {
@@ -106,26 +98,23 @@ sut = try AudioRecorder(
 
 | New Feature                | Add To                      | Pattern                               |
 | -------------------------- | --------------------------- | ------------------------------------- |
-| New service method         | Existing `*Tests.swift`     | Async test with XCTAssert             |
+| New service method         | Existing `*Tests.swift`     | Async test with #expect               |
 | New service                | New `*Tests.swift`          | Copy structure from similar service   |
-| API integration            | AIEnhancementServiceTests   | MockURLSession pattern                |
+| API integration            | PolishServiceTests          | MockURLSession pattern                |
 | SwiftData queries          | HistoryStoreTests           | In-memory container                   |
 | Hardware-dependent service | Use protocol + mock pattern | See AudioRecorderTests + TestHelpers/ |
 
 ## RUN TESTS
 
 ```bash
-xcodebuild test -scheme Pindrop -testPlan Unit -destination 'platform=macOS'
-xcodebuild test -scheme Pindrop -testPlan Integration -destination 'platform=macOS'
-just test
-just test-integration
+xcodebuild test -scheme Pindrop -only-testing:PindropTests -destination 'platform=macOS'
 ```
 
 ## ANTI-PATTERNS
 
 | DO NOT                                  | WHY                                                        |
 | --------------------------------------- | ---------------------------------------------------------- |
-| Add third-party test frameworks         | XCTest sufficient                                          |
+| Add third-party test frameworks         | Swift Testing sufficient                                   |
 | Use real network in tests               | Mock URLSession instead                                    |
 | Test with real hardware/permissions     | Use MockPermissionProvider/MockAudioCaptureBackend instead |
 | Leave test data on disk                 | Cleanup in tearDown                                        |
