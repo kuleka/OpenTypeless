@@ -1,6 +1,6 @@
 # Open Typeless — 项目规划文档
 
-> 最后更新：2026-03-29
+> 最后更新：2026-03-30
 > 这份文档用于记录项目的长期目标、已经确认的架构决策、当前真实状态，以及下一阶段规划。
 
 ---
@@ -28,10 +28,11 @@ OpenTypeless 是一个开源的 Typeless 替代方案。
 
 ## 2. 当前状态总览
 
-截至目前，Phase 1 基础能力已经完成并合并到 `main`：
+截至目前，Phase 1 基础能力已完成并合并到 `main`，Legacy 清理也已完成：
 
 - Python Engine 已完成
 - macOS Client 的主听写链路已完成 `Client + Engine` 架构迁移
+- Legacy 清理已完成：AIEnhancementService、quick capture、Notes 子系统全部删除
 - OpenSpec 主线 specs 已建立，当前没有 active change
 
 当前基线来源：
@@ -49,8 +50,8 @@ OpenTypeless 是一个开源的 Typeless 替代方案。
 一句话总结当前状态：
 
 ```text
-Phase 1 已完成
-  = Engine 可用 + macOS 主链路可用 + OpenSpec 基线已归档
+Phase 1 + Legacy Cleanup 已完成
+  = Engine 可用 + macOS 主链路可用 + 遗留代码已清理 + OpenSpec 基线已归档
 ```
 
 ---
@@ -283,13 +284,14 @@ OpenTypeless/
 - Engine 离线时怎样给用户明确反馈
 - 最终发布时 Engine 和 macOS app 如何一起交付
 
-### 7.2 遗留客户端流程清理
+### 7.2 遗留客户端流程清理 — ✅ 已完成
 
-例如：
+已清理内容：
 
-- `AIEnhancementService` 仍残留在少数非主路径流程中
-- `quick capture note` 仍是 legacy 分支
-- 一些命名和旧设置项仍带有 Pindrop 语义
+- `AIEnhancementService` 已删除（1420 行），`LiveSessionContext` 提取为独立文件
+- `quick capture note` 工作流已退役（快捷键、录音状态、笔记编辑器）
+- Notes 子系统已整体删除（NotesStore、NoteSchema、NotesView、NoteCardView、NoteEditorWindow，共 ~1700 行）
+- Legacy AI provider/key/model 设置 UI 已移除，统一到 Engine-backed 配置
 
 ### 7.3 用户可定制场景规则
 
@@ -316,19 +318,11 @@ Windows / Linux 仍然只是未来方向，没有启动。
 
 - `phase2-runtime-onboarding`
 
-### 优先级 2：Legacy Flow Cleanup
+### 优先级 2：Legacy Flow Cleanup — ✅ 已完成
 
-目标：
+已通过 `cleanup-legacy-client-flows` change 完成并归档。
 
-- 处理 `AIEnhancementService` 遗留路径
-- 评估并迁移或删除 `quick capture note`
-- 进一步清理“Pindrop 旧语义”
-
-建议 change 名，例如：
-
-- `cleanup-legacy-client-flows`
-
-### 优先级 3：Custom Context Rules
+### 优先级 3（现为优先级 2）：Custom Context Rules
 
 目标：
 
@@ -490,11 +484,12 @@ xcodebuild test \
 已完成：
   Engine Phase 1
   macOS Client Phase 1
+  Legacy Client Cleanup（AIEnhancementService、Notes、quick capture 全部删除）
   OpenSpec baseline
 
 下一步重点：
+  端到端集成测试（验证主链路完整可用）
   运行时 onboarding / 交付体验
-  legacy 流程清理
   用户自定义场景规则
 ```
 

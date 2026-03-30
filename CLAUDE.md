@@ -1,7 +1,7 @@
 # OpenTypeless — Project Context for Claude Code
 
 > 本文件供 Claude Code session 自动读取，快速了解项目状态和关键决策。
-> 最后更新：2026-03-29
+> 最后更新：2026-03-30
 
 ## 项目概述
 
@@ -100,12 +100,15 @@ OpenTypeless/
 - [x] 退役 quick capture note 工作流（快捷键、录音状态、笔记编辑器启动）
 - [x] 从 AppCoordinator 移除 AIEnhancementService 运行时依赖
 - [x] 合并设置到 Engine-backed 配置（legacy AI 迁移 + 移除旧 UI）
-- [x] 简化 NotesStore（保留 CRUD，移除 AI 元数据生成）
+- [x] 删除 AIEnhancementService（1420 行），提取 LiveSessionContext 到独立文件
+- [x] 删除整个 Notes 子系统（NotesStore、NoteSchema、NotesView、NoteCardView、NoteEditorWindow，共 ~1700 行）
 - [x] 更新测试覆盖退役功能
 
 ### 待规划
-- [ ] **端到端集成测试** — 启动 Engine + Client 跑完整流程
-- [ ] **Phase 2 规划** — 参考 `open-typeless-project-plan.md`
+- [ ] **端到端集成测试** — 启动 Engine + Client 跑完整流程，验证主链路
+- [ ] **Runtime Onboarding 收尾** — 首次启动引导、Engine 连接状态反馈、故障提示
+- [ ] **Distribution** — Engine + App 打包交付方案（Homebrew / DMG）
+- [ ] **Custom Context Rules** — 用户自定义场景规则和 prompt 模板
 
 ## 开发指引
 
