@@ -93,6 +93,7 @@ extension Notification.Name {
     static let switchModel = Notification.Name("tech.watzon.pindrop.switchModel")
     static let modelActiveChanged = Notification.Name("tech.watzon.pindrop.modelActiveChanged")
     static let requestActiveModel = Notification.Name("tech.watzon.pindrop.requestActiveModel")
+    static let rerunOnboarding = Notification.Name("tech.watzon.pindrop.rerunOnboarding")
 }
 
 struct HotkeyConflict: Equatable {
@@ -302,6 +303,7 @@ final class AppCoordinator {
     let automaticDictionaryLearningService: AutomaticDictionaryLearningService
     let promptPresetStore: PromptPresetStore
     let mentionRewriteService: MentionRewriteService
+    let engineProcessManager: EngineProcessManager
     let mediaPauseService: MediaPauseService
     let mediaIngestionService: MediaIngestionService
     let mediaPreparationService: MediaPreparationService
@@ -461,8 +463,31 @@ final class AppCoordinator {
                 )
             }
         )
+        let resolvedEngineStartupHandlers = self.engineStartupHandlers
+        self.engineProcessManager = EngineProcessManager(
+            configuration: EngineProcessManager.Configuration(
+                customBinaryPath: resolvedSettingsStore.engineBinaryPath.isEmpty ? nil : resolvedSettingsStore.engineBinaryPath,
+                host: resolvedSettingsStore.engineHost,
+                port: resolvedSettingsStore.enginePort
+            ),
+            healthCheck: { try await resolvedEngineStartupHandlers.health() },
+            pushConfig: { try await resolvedEngineStartupHandlers.pushConfig($0) },
+            configProvider: { [resolvedSettingsStore] in
+                guard let llmConfig = resolvedSettingsStore.currentEngineLLMProviderConfiguration() else {
+                    return nil
+                }
+                let sttConfig = resolvedSettingsStore.sttMode == .remote
+                    ? resolvedSettingsStore.currentEngineSTTProviderConfiguration()
+                    : nil
+                return ConfigRequest(stt: sttConfig, llm: llmConfig, defaultLanguage: nil)
+            }
+        )
+        self.engineProcessManager.onStatusChange = { [resolvedSettingsStore] state in
+            resolvedSettingsStore.updateEngineRuntimeState(state)
+        }
+
         self.audioRecorder.setPreferredInputDeviceUID(settingsStore.selectedInputDeviceUID)
-        
+
         let initialOutputMode: OutputMode = settingsStore.outputMode == "directInsert" ? .directInsert : .clipboard
         self.outputManager = outputManager ?? OutputManager(outputMode: initialOutputMode)
         self.historyStore = HistoryStore(modelContext: modelContext)
@@ -705,12 +730,28 @@ final class AppCoordinator {
                 )
             }
         }
+
+        NotificationCenter.default.addObserver(
+            forName: .rerunOnboarding,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.showOnboarding()
+            }
+        }
     }
-    
+
     // MARK: - Lifecycle
-    
+
     func start() async {
         Log.boot.info("AppCoordinator.start() entered hasCompletedOnboarding=\(settingsStore.hasCompletedOnboarding) selectedModel=\(settingsStore.selectedModel)")
+
+        // Start Engine process in background (parallel with onboarding or normal startup)
+        Task { @MainActor in
+            await engineProcessManager.start()
+        }
+
         if !settingsStore.hasCompletedOnboarding {
             Log.boot.info("Taking onboarding path (skipping splash and normal operation until complete)")
             showOnboarding()
@@ -722,9 +763,9 @@ final class AppCoordinator {
         refreshStatusBarPresets()
 
         splashController.show()
-        
+
         await startNormalOperation()
-        
+
         splashController.dismiss { [weak self] in
             self?.mainWindowController.show()
         }
@@ -735,9 +776,16 @@ final class AppCoordinator {
         Log.boot.info("showOnboarding: presenting onboarding window")
         onboardingController.showOnboarding(
             settings: settingsStore,
-            modelManager: modelManager,
-            transcriptionService: transcriptionService,
             permissionManager: permissionManager,
+            engineHealthCheck: { [weak self] in
+                guard let self else { return false }
+                do {
+                    _ = try await self.engineStartupHandlers.health()
+                    return true
+                } catch {
+                    return false
+                }
+            },
             onComplete: { [weak self] in
                 Task { @MainActor in
                     await self?.finishPostOnboardingSetup()
@@ -3839,6 +3887,7 @@ final class AppCoordinator {
     }
 
     func cleanup() {
+        engineProcessManager.stop()
         floatingIndicatorHiddenTask?.cancel()
         floatingIndicatorHiddenTask = nil
         engineRuntimeEvaluationTask?.cancel()

@@ -42,6 +42,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var languageMenuItem: NSMenuItem?
     private var languageMenu: NSMenu?
 
+    private var engineStatusItem: NSMenuItem?
     private var toggleFloatingIndicatorItem: NSMenuItem?
     private var launchAtLoginItem: NSMenuItem?
     private var openHistoryItem: NSMenuItem?
@@ -176,6 +177,17 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private func setupMenu() {
         menu.removeAllItems()
         menu.delegate = self
+
+        // === ENGINE STATUS ===
+        engineStatusItem = NSMenuItem(
+            title: engineStatusMenuTitle(),
+            action: #selector(openEngineSettings),
+            keyEquivalent: ""
+        )
+        engineStatusItem?.target = self
+        engineStatusItem?.image = NSImage(systemSymbolName: "server.rack", accessibilityDescription: nil)
+        menu.addItem(engineStatusItem!)
+        menu.addItem(NSMenuItem.separator())
 
         // === RECORDING SECTION ===
         let recordingHeader = createHeaderItem(localized("Recording", locale: locale))
@@ -494,7 +506,31 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
     }
 
+    func updateEngineStatus() {
+        engineStatusItem?.title = engineStatusMenuTitle()
+    }
+
+    private func engineStatusMenuTitle() -> String {
+        let state = settingsStore.engineRuntimeState
+        let prefix = localized("Engine", locale: locale)
+        switch state.phase {
+        case .checking, .syncing:
+            return "\(prefix): \(localized("Connecting...", locale: locale))"
+        case .offline:
+            return "\(prefix): \(localized("Offline", locale: locale))"
+        case .needsConfiguration:
+            return "\(prefix): \(localized("Not Configured", locale: locale))"
+        case .ready:
+            return "\(prefix): \(localized("Connected", locale: locale))"
+        case .error:
+            return "\(prefix): \(localized("Error", locale: locale))"
+        }
+    }
+
     func updateDynamicItems() {
+        // Update engine status
+        updateEngineStatus()
+
         // Update output mode
         let outputModeText = settingsStore.outputMode == "clipboard"
             ? localized("Clipboard", locale: locale)
@@ -870,6 +906,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     @objc private func openSettings() {
         showSettings(tab: .general)
+    }
+
+    @objc private func openEngineSettings() {
+        showSettings(tab: .ai)
     }
 
     @objc private func quit() {

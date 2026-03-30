@@ -24,7 +24,7 @@ struct WelcomeStepView: View {
                 Text(localized("Welcome to Pindrop", locale: locale))
                     .font(.system(size: 28, weight: .bold, design: .rounded))
 
-                Text(localized("Local speech-to-text, right from your menu bar.\nFast, private, and always available.", locale: locale))
+                Text(localized("Voice input that adapts to your context.\nSpeak naturally, get polished text.", locale: locale))
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -33,8 +33,8 @@ struct WelcomeStepView: View {
             .opacity(textOpacity)
 
             VStack(spacing: 12) {
-                featureRow(icon: .waveform, text: localized("Powered by WhisperKit", locale: locale))
-                featureRow(icon: .shield, text: localized("100% local processing", locale: locale))
+                featureRow(icon: .waveform, text: localized("Speech-to-text with local or cloud STT", locale: locale))
+                featureRow(icon: .sparkles, text: localized("AI polishing adapts to your active app", locale: locale))
                 featureRow(icon: .keyboard, text: localized("Global keyboard shortcuts", locale: locale))
             }
             .opacity(textOpacity)

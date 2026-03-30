@@ -442,6 +442,8 @@ final class SettingsStore: ObservableObject {
    var selectedInputDeviceUID: String = Defaults.selectedInputDeviceUID
    @AppStorage("sttMode", store: SettingsStoreRuntime.appStorageStore)
    private var sttModeStorage: String = Defaults.sttMode
+   @AppStorage("engineBinaryPath", store: SettingsStoreRuntime.appStorageStore)
+   var engineBinaryPath: String = ""
    @AppStorage("engineHost", store: SettingsStoreRuntime.appStorageStore)
    private var engineHostStorage: String = Defaults.engineHost
    @AppStorage("enginePort", store: SettingsStoreRuntime.appStorageStore)

@@ -54,7 +54,7 @@ struct PermissionsStepView: View {
             Text(localized("Permissions", locale: locale))
                 .font(.system(size: 24, weight: .bold, design: .rounded))
 
-            Text(localized("Pindrop needs a few permissions to work.\nYour privacy is always respected.", locale: locale))
+            Text(localized("Pindrop needs these permissions to work.\nBoth are required for full functionality.", locale: locale))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -77,9 +77,9 @@ struct PermissionsStepView: View {
         PermissionCard(
             icon: .accessibility,
             title: localized("Accessibility", locale: locale),
-            description: localized("Optional: Insert text directly into apps", locale: locale),
+            description: localized("Required for scene detection and direct text insertion", locale: locale),
             isGranted: accessibilityGranted,
-            isRequired: false,
+            isRequired: true,
             isActionDisabled: accessibilityRequestInFlight,
             action: requestAccessibility
         )
@@ -87,8 +87,8 @@ struct PermissionsStepView: View {
 
     private var continueSection: some View {
         VStack(spacing: 12) {
-            if !microphoneGranted {
-                Text(localized("Microphone permission is required to continue", locale: locale))
+            if !microphoneGranted || !accessibilityGranted {
+                Text(localized("Both permissions are required to continue", locale: locale))
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
@@ -100,7 +100,7 @@ struct PermissionsStepView: View {
                     .padding(.vertical, 12)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(!microphoneGranted)
+            .disabled(!microphoneGranted || !accessibilityGranted)
         }
         .padding(.horizontal, 40)
     }

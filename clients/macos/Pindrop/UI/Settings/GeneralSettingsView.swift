@@ -21,7 +21,41 @@ struct GeneralSettingsView: View {
             floatingIndicatorSection
             dictionarySection
             interfaceSection
+            setupSection
             resetSection
+        }
+    }
+
+    private var setupSection: some View {
+        SettingsCard(
+            title: localized("Setup", locale: locale),
+            icon: "arrow.clockwise",
+            detail: localized("Re-run the initial setup wizard to reconfigure permissions, providers, and preferences.", locale: locale)
+        ) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(localized("Re-run Setup", locale: locale))
+                        .font(AppTypography.body)
+                        .foregroundStyle(AppColors.textPrimary)
+                    Text(localized("Opens the onboarding wizard with your current settings pre-filled", locale: locale))
+                        .font(AppTypography.caption)
+                        .foregroundStyle(AppColors.textSecondary)
+                }
+
+                Spacer()
+
+                Button {
+                    settings.hasCompletedOnboarding = false
+                    settings.currentOnboardingStep = 0
+                    NotificationCenter.default.post(
+                        name: .rerunOnboarding,
+                        object: nil
+                    )
+                } label: {
+                    Text(localized("Re-run Setup", locale: locale))
+                }
+                .buttonStyle(.bordered)
+            }
         }
     }
 

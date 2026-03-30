@@ -104,9 +104,17 @@ OpenTypeless/
 - [x] 删除整个 Notes 子系统（NotesStore、NoteSchema、NotesView、NoteCardView、NoteEditorWindow，共 ~1700 行）
 - [x] 更新测试覆盖退役功能
 
+### Runtime Onboarding & Engine Lifecycle — ✅ 已完成
+
+- [x] EngineProcessManager（自动发现/启动/监控/重启 Engine 进程）
+- [x] 重新设计 Onboarding 流程（welcome → permissions → sttMode → llmConfig → [sttConfig] → hotkey → complete）
+- [x] 新建 STTModeStepView、LLMConfigStepView、STTConfigStepView、CompleteStepView
+- [x] StatusBar Engine 状态指示（菜单项 + 配置入口）
+- [x] AppCoordinator 集成（DI、启动/停止、Re-run Setup）
+- [x] EngineProcessManager 单元测试（6 个测试）
+
 ### 待规划
 - [ ] **端到端集成测试** — 启动 Engine + Client 跑完整流程，验证主链路
-- [ ] **Runtime Onboarding 收尾** — 首次启动引导、Engine 连接状态反馈、故障提示
 - [ ] **Distribution** — Engine + App 打包交付方案（Homebrew / DMG）
 - [ ] **Custom Context Rules** — 用户自定义场景规则和 prompt 模板
 
