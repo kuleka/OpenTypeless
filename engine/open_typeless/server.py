@@ -1,6 +1,7 @@
 """FastAPI HTTP server — all endpoints."""
 
 import base64
+import os
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -11,7 +12,9 @@ from fastapi.responses import JSONResponse
 from . import __version__
 from .config import get_masked_config, is_configured, is_stt_configured, set_config
 from .context import assemble_prompt
-from .llm import LLMError, polish
+from . import llm as _llm_mod
+from . import stt as _stt_mod
+from .llm import LLMError
 from .models import (
     AppContext,
     ConfigRequest,
@@ -28,7 +31,7 @@ from .models import (
     UpdateContextRequest,
 )
 from .prompt_router import detect_scene, get_all_scene_configs, load_prompts
-from .stt import STTError, transcribe
+from .stt import STTError
 
 # In-memory scene config overrides (updated via POST /contexts)
 _context_overrides: dict[str, SceneConfig] = {}
@@ -37,6 +40,18 @@ _context_overrides: dict[str, SceneConfig] = {}
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     load_prompts()
+
+    if os.environ.get("OPEN_TYPELESS_STUB") == "1":
+
+        async def _stub_polish(prompt, model=None):  # noqa: ARG001
+            return f"[stub] {prompt.user}"
+
+        async def _stub_transcribe(audio_bytes, language="auto"):  # noqa: ARG001
+            return "stub transcription"
+
+        _llm_mod.polish = _stub_polish  # type: ignore[assignment]
+        _stt_mod.transcribe = _stub_transcribe  # type: ignore[assignment]
+
     yield
 
 
@@ -87,7 +102,7 @@ async def post_transcribe(
 
     stt_start = time.perf_counter()
     try:
-        text = await transcribe(audio_bytes, language=language)
+        text = await _stt_mod.transcribe(audio_bytes, language=language)
     except STTError as e:
         return _error(502, "STT_FAILURE", str(e))
     stt_ms = int((time.perf_counter() - stt_start) * 1000)
@@ -148,7 +163,7 @@ async def post_polish(req: PolishRequest) -> JSONResponse | PolishResponse:
 
         stt_start = time.perf_counter()
         try:
-            raw_transcript = await transcribe(audio_bytes, language=language)
+            raw_transcript = await _stt_mod.transcribe(audio_bytes, language=language)
         except STTError as e:
             return _error(502, "STT_FAILURE", str(e))
         stt_ms = int((time.perf_counter() - stt_start) * 1000)
@@ -172,7 +187,7 @@ async def post_polish(req: PolishRequest) -> JSONResponse | PolishResponse:
     model_override = req.options.model
     llm_start = time.perf_counter()
     try:
-        polished_text = await polish(prompt, model=model_override)
+        polished_text = await _llm_mod.polish(prompt, model=model_override)
     except LLMError as e:
         return _error(502, "LLM_FAILURE", str(e))
     llm_ms = int((time.perf_counter() - llm_start) * 1000)

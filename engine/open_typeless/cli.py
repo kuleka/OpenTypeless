@@ -15,11 +15,20 @@ def main() -> None:
         default=None,
         help="Port to listen on (default: 19823, or OPEN_TYPELESS_PORT env var)",
     )
+    serve_parser.add_argument(
+        "--stub",
+        action="store_true",
+        default=False,
+        help="Enable stub mode: replace LLM/STT with deterministic responses (for testing)",
+    )
 
     args = parser.parse_args()
 
     if args.command == "serve":
         import uvicorn
+
+        if args.stub:
+            os.environ["OPEN_TYPELESS_STUB"] = "1"
 
         port = args.port or int(os.environ.get("OPEN_TYPELESS_PORT", "19823"))
         uvicorn.run(
@@ -30,3 +39,7 @@ def main() -> None:
         )
     else:
         parser.print_help()
+
+
+if __name__ == "__main__":
+    main()

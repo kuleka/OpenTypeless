@@ -107,8 +107,8 @@ def test_polish_invalid_base64() -> None:
     assert resp.json()["error"]["code"] == "INVALID_AUDIO"
 
 
-@patch("open_typeless.server.transcribe", new_callable=AsyncMock)
-@patch("open_typeless.server.polish", new_callable=AsyncMock)
+@patch("open_typeless.stt.transcribe", new_callable=AsyncMock)
+@patch("open_typeless.llm.polish", new_callable=AsyncMock)
 def test_polish_success(mock_polish, mock_transcribe) -> None:
     mock_transcribe.return_value = "hello world"
     mock_polish.return_value = "Hello, world!"
@@ -133,8 +133,8 @@ def test_polish_success(mock_polish, mock_transcribe) -> None:
     assert "total_ms" in data
 
 
-@patch("open_typeless.server.transcribe", new_callable=AsyncMock)
-@patch("open_typeless.server.polish", new_callable=AsyncMock)
+@patch("open_typeless.stt.transcribe", new_callable=AsyncMock)
+@patch("open_typeless.llm.polish", new_callable=AsyncMock)
 def test_polish_translate_task(mock_polish, mock_transcribe) -> None:
     mock_transcribe.return_value = "你好世界"
     mock_polish.return_value = "Hello world"
@@ -167,8 +167,8 @@ def test_polish_translate_missing_output_language() -> None:
     assert "output_language" in resp.json()["error"]["message"]
 
 
-@patch("open_typeless.server.transcribe", new_callable=AsyncMock)
-@patch("open_typeless.server.polish", new_callable=AsyncMock)
+@patch("open_typeless.stt.transcribe", new_callable=AsyncMock)
+@patch("open_typeless.llm.polish", new_callable=AsyncMock)
 def test_polish_text_mode(mock_polish, mock_transcribe) -> None:
     mock_polish.return_value = "Hello, world!"
 
@@ -189,8 +189,8 @@ def test_polish_text_mode(mock_polish, mock_transcribe) -> None:
     mock_transcribe.assert_not_called()
 
 
-@patch("open_typeless.server.transcribe", new_callable=AsyncMock)
-@patch("open_typeless.server.polish", new_callable=AsyncMock)
+@patch("open_typeless.stt.transcribe", new_callable=AsyncMock)
+@patch("open_typeless.llm.polish", new_callable=AsyncMock)
 def test_polish_text_mode_llm_only_config(mock_polish, mock_transcribe) -> None:
     """Text mode works even without STT configured."""
     mock_polish.return_value = "Polished text"
@@ -230,7 +230,7 @@ def test_polish_audio_without_stt_config() -> None:
 from open_typeless.stt import STTError
 
 
-@patch("open_typeless.server.transcribe", new_callable=AsyncMock)
+@patch("open_typeless.stt.transcribe", new_callable=AsyncMock)
 def test_polish_stt_failure(mock_transcribe) -> None:
     mock_transcribe.side_effect = STTError("STT API failed")
 
@@ -243,8 +243,8 @@ def test_polish_stt_failure(mock_transcribe) -> None:
 from open_typeless.llm import LLMError
 
 
-@patch("open_typeless.server.transcribe", new_callable=AsyncMock)
-@patch("open_typeless.server.polish", new_callable=AsyncMock)
+@patch("open_typeless.stt.transcribe", new_callable=AsyncMock)
+@patch("open_typeless.llm.polish", new_callable=AsyncMock)
 def test_polish_llm_failure(mock_polish, mock_transcribe) -> None:
     mock_transcribe.return_value = "hello"
     mock_polish.side_effect = LLMError("LLM API failed")
@@ -289,7 +289,7 @@ def test_post_contexts() -> None:
 # ── POST /transcribe ──────────────────────────────────
 
 
-@patch("open_typeless.server.transcribe", new_callable=AsyncMock)
+@patch("open_typeless.stt.transcribe", new_callable=AsyncMock)
 def test_transcribe_success(mock_transcribe) -> None:
     mock_transcribe.return_value = "hello world"
 
@@ -304,7 +304,7 @@ def test_transcribe_success(mock_transcribe) -> None:
     assert "stt_ms" in data
 
 
-@patch("open_typeless.server.transcribe", new_callable=AsyncMock)
+@patch("open_typeless.stt.transcribe", new_callable=AsyncMock)
 def test_transcribe_with_language(mock_transcribe) -> None:
     mock_transcribe.return_value = "你好"
 
@@ -329,7 +329,7 @@ def test_transcribe_stt_not_configured() -> None:
     assert resp.json()["error"]["code"] == "STT_NOT_CONFIGURED"
 
 
-@patch("open_typeless.server.transcribe", new_callable=AsyncMock)
+@patch("open_typeless.stt.transcribe", new_callable=AsyncMock)
 def test_transcribe_stt_failure(mock_transcribe) -> None:
     mock_transcribe.side_effect = STTError("STT API failed")
 
