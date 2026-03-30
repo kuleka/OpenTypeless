@@ -850,7 +850,7 @@ struct AIEnhancementSettingsView: View {
       switch selectedPromptType {
       case .transcription:
          settings.selectedPresetId = nil  // Reset preset to Custom
-         enhancementPrompt = localizedTranscriptionPrompt(AIEnhancementService.defaultSystemPrompt)
+         enhancementPrompt = localizedTranscriptionPrompt(SettingsStore.Defaults.aiEnhancementPrompt)
       case .notes:
          noteEnhancementPrompt = localizedNotePrompt(SettingsStore.Defaults.noteEnhancementPrompt)
       }
@@ -1069,7 +1069,7 @@ private extension AIEnhancementSettingsView {
    var customPromptPresetId: String { "__custom__" }
 
    func localizedTranscriptionPrompt(_ prompt: String) -> String {
-      if prompt == AIEnhancementService.defaultSystemPrompt {
+      if prompt == SettingsStore.Defaults.aiEnhancementPrompt {
          return localized("You are a text enhancement assistant. Improve the grammar, punctuation, and formatting of the provided text while preserving its original meaning and tone. Return only the enhanced text without any additional commentary.", locale: locale)
       }
 

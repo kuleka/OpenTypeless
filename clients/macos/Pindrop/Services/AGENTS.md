@@ -14,7 +14,7 @@ Services/
 ├── HistoryStore.swift         # SwiftData persistence
 ├── SettingsStore.swift        # @AppStorage + Keychain
 ├── PermissionManager.swift    # Mic + Accessibility permissions
-└── AIEnhancementService.swift # OpenAI-compatible API
+└── LiveSessionContext.swift   # Context/vibe session state
 ```
 
 ## WHERE TO LOOK
@@ -29,7 +29,7 @@ Services/
 | Save transcription     | HistoryStore         | `save()`, `search()`, `export()`              |
 | Read/write settings    | SettingsStore        | `@AppStorage`, `saveAPIKey()`                 |
 | Check permissions      | PermissionManager    | `requestPermission()`, `checkAccessibility()` |
-| Enhance text via AI    | AIEnhancementService | `enhance(text:apiEndpoint:apiKey:)`           |
+| Context session state  | LiveSessionContext   | `bounded()`, `hasAnySignals`                  |
 
 ## SERVICE DETAILS
 

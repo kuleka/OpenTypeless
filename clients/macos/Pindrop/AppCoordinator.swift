@@ -1877,7 +1877,7 @@ final class AppCoordinator {
         return lastSignature != signature
     }
 
-    private func currentLiveSessionContext() -> AIEnhancementService.LiveSessionContext? {
+    private func currentLiveSessionContext() -> LiveSessionContext? {
         guard let contextSessionState else { return nil }
 
         let enrichment = contextSessionState.latestAdapterEnrichment
@@ -1889,7 +1889,7 @@ final class AppCoordinator {
             contextSessionState.transitions.flatMap { $0.contextTags }
         )
 
-        return AIEnhancementService.LiveSessionContext(
+        return LiveSessionContext(
             runtimeState: contextSessionState.runtimeState,
             latestAppName: contextSessionState.latestSnapshot.appContext?.appName,
             latestWindowTitle: contextSessionState.latestSnapshot.appContext?.windowTitle,
