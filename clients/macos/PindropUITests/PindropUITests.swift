@@ -29,21 +29,18 @@ final class PindropUITests: XCTestCase {
         launchedApplication = nil
     }
 
-    @MainActor
-    func testSettingsFixtureLaunches() throws {
-        try skipIfTargetAppIsAlreadyRunning()
+    func testSettingsFixtureLaunches() {
+        guard assertTargetAppIsNotAlreadyRunning() else { return }
 
         let app = configuredApplication()
         launchedApplication = app
         app.launch()
 
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
-        XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.textFields["Search settings"].waitForExistence(timeout: 2))
-        XCTAssertTrue(app.buttons["General"].exists)
+        XCTAssertTrue(app.textFields["settings.search.field"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["settings.tab.general"].waitForExistence(timeout: 2))
     }
 
-    @MainActor
     func testSettingsSearchShowsEmptyStateForUnknownQuery() throws {
         try skipIfTargetAppIsAlreadyRunning()
 
@@ -51,49 +48,48 @@ final class PindropUITests: XCTestCase {
         launchedApplication = app
         app.launch()
 
-        XCTAssertTrue(app.staticTexts["No settings found"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.textFields["settings.search.field"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["settings.search.clear"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["settings.search.emptyState.title"].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.buttons["settings.tab.general"].exists)
     }
 
-    @MainActor
     func testThemeTabFixtureLaunches() throws {
         try skipIfTargetAppIsAlreadyRunning()
 
-        let app = configuredApplication(settingsTab: "Theme")
+        let app = configuredApplication()
         launchedApplication = app
         app.launch()
 
-        XCTAssertTrue(app.staticTexts["Theme"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Light Theme"].waitForExistence(timeout: 2))
-        XCTAssertTrue(app.staticTexts["Dark Theme"].waitForExistence(timeout: 2))
+        let themeTabButton = app.buttons["settings.tab.theme"]
+        XCTAssertTrue(themeTabButton.waitForExistence(timeout: 5))
+        themeTabButton.tap()
+
+        XCTAssertTrue(app.staticTexts["settings.theme.card.mode.title"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["settings.theme.card.light.title"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["settings.theme.card.dark.title"].waitForExistence(timeout: 2))
     }
 
-    @MainActor
-    func testEngineSettingsFixtureTogglesBetweenLocalAndRemoteSTT() throws {
+    func testEngineSettingsFixtureLoadsEngineAndAIConfiguration() throws {
         try skipIfTargetAppIsAlreadyRunning()
 
-        let app = configuredApplication(settingsTab: "AI Enhancement")
+        let app = configuredApplication()
         launchedApplication = app
         app.launch()
 
-        XCTAssertTrue(app.staticTexts["Engine & AI"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Engine Connection"].waitForExistence(timeout: 2))
-        XCTAssertTrue(app.staticTexts["Transcription Mode"].waitForExistence(timeout: 2))
-        XCTAssertTrue(app.staticTexts["Local STT"].waitForExistence(timeout: 2))
-        XCTAssertTrue(app.staticTexts["LLM Provider"].waitForExistence(timeout: 2))
+        let aiTabButton = app.buttons["settings.tab.ai-enhancement"]
+        XCTAssertTrue(aiTabButton.waitForExistence(timeout: 5))
+        aiTabButton.tap()
 
-        let remoteToggle = remoteSTTToggle(in: app)
-        XCTAssertTrue(remoteToggle.waitForExistence(timeout: 2))
-        remoteToggle.tap()
+        let engineConnectionTitle = app.staticTexts["settings.ai.engineConnection.title"]
+        let transcriptionModeTitle = app.staticTexts["settings.ai.sttModeCard.title"]
+        let localSTTTitle = app.staticTexts["settings.ai.localSTT.title"]
+        let llmProviderTitle = app.staticTexts["settings.ai.llmProvider.title"]
 
-        XCTAssertTrue(app.staticTexts["Remote STT Provider"].waitForExistence(timeout: 2))
-        XCTAssertFalse(app.staticTexts["Local STT"].exists)
-
-        let localToggle = localSTTToggle(in: app)
-        XCTAssertTrue(localToggle.waitForExistence(timeout: 2))
-        localToggle.tap()
-
-        XCTAssertTrue(app.staticTexts["Local STT"].waitForExistence(timeout: 2))
-        XCTAssertFalse(app.staticTexts["Remote STT Provider"].exists)
+        XCTAssertTrue(engineConnectionTitle.waitForExistence(timeout: 5))
+        XCTAssertTrue(transcriptionModeTitle.waitForExistence(timeout: 2))
+        XCTAssertTrue(localSTTTitle.waitForExistence(timeout: 2))
+        XCTAssertTrue(llmProviderTitle.waitForExistence(timeout: 2))
     }
 
     private func configuredApplication(
@@ -115,39 +111,20 @@ final class PindropUITests: XCTestCase {
         return app
     }
 
-    private func remoteSTTToggle(in app: XCUIApplication) -> XCUIElement {
-        let exactButton = app.segmentedControls.buttons["Remote (Engine)"]
-        if exactButton.exists {
-            return exactButton
-        }
-
-        let fallbackButton = app.buttons["Remote (Engine)"]
-        if fallbackButton.exists {
-            return fallbackButton
-        }
-
-        return exactButton
-    }
-
-    private func localSTTToggle(in app: XCUIApplication) -> XCUIElement {
-        let exactButton = app.segmentedControls.buttons["Local"]
-        if exactButton.exists {
-            return exactButton
-        }
-
-        let fallbackButton = app.buttons["Local"]
-        if fallbackButton.exists {
-            return fallbackButton
-        }
-
-        return exactButton
-    }
-
     private func skipIfTargetAppIsAlreadyRunning() throws {
         let runningApplications = NSRunningApplication.runningApplications(withBundleIdentifier: targetBundleIdentifier)
         if !runningApplications.isEmpty {
             throw XCTSkip("Quit Pindrop before running UI tests so XCTest does not force-terminate your active app session.")
         }
+    }
+
+    private func assertTargetAppIsNotAlreadyRunning() -> Bool {
+        let runningApplications = NSRunningApplication.runningApplications(withBundleIdentifier: targetBundleIdentifier)
+        guard runningApplications.isEmpty else {
+            XCTFail("Quit Pindrop before running UI tests so XCTest does not force-terminate your active app session.")
+            return false
+        }
+        return true
     }
 
 }

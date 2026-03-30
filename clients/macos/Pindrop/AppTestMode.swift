@@ -52,8 +52,16 @@ enum AppUITestFixture {
     }
 
     static var settingsInitialTab: SettingsTab {
-        let rawValue = AppTestMode.environment[AppTestMode.uiTestSettingsTabKey]?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return SettingsTab(rawValue: rawValue?.capitalized ?? "") ?? .general
+        let rawValue = AppTestMode.environment[AppTestMode.uiTestSettingsTabKey]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard let rawValue, !rawValue.isEmpty else {
+            return .general
+        }
+
+        return SettingsTab.allCases.first {
+            $0.rawValue.caseInsensitiveCompare(rawValue) == .orderedSame
+        } ?? .general
     }
 
     @ViewBuilder

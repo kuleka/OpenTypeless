@@ -304,6 +304,7 @@ struct SettingsContainerView: View {
                 Text(localized("No settings found", locale: locale))
                     .font(AppTypography.title)
                     .foregroundStyle(AppColors.textPrimary)
+                    .accessibilityIdentifier("settings.search.emptyState.title")
 
                 Text(localized("Try searching for terms like hotkeys, microphone, updates, or vibe mode.", locale: locale))
                     .font(AppTypography.body)
@@ -313,6 +314,7 @@ struct SettingsContainerView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(AppTheme.Spacing.xxl)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("settings.search.emptyState")
     }
 }

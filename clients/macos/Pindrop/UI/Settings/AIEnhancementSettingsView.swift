@@ -232,7 +232,11 @@ struct AIEnhancementSettingsView: View {
    }
 
    private var engineConnectionCard: some View {
-      SettingsCard(title: localized("Engine Connection", locale: locale), icon: "server.rack") {
+      SettingsCard(
+         title: localized("Engine Connection", locale: locale),
+         icon: "server.rack",
+         accessibilityIdentifier: "settings.ai.engineConnection"
+      ) {
          VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 16) {
                VStack(alignment: .leading, spacing: 6) {
@@ -241,6 +245,7 @@ struct AIEnhancementSettingsView: View {
                   TextField("127.0.0.1", text: engineHostBinding)
                      .textFieldStyle(.roundedBorder)
                      .autocorrectionDisabled()
+                     .accessibilityIdentifier("settings.ai.engine.host")
                }
 
                VStack(alignment: .leading, spacing: 6) {
@@ -252,6 +257,7 @@ struct AIEnhancementSettingsView: View {
                      format: .number
                   )
                   .textFieldStyle(.roundedBorder)
+                  .accessibilityIdentifier("settings.ai.engine.port")
                }
 
                Spacer()
@@ -278,13 +284,18 @@ struct AIEnhancementSettingsView: View {
    }
 
    private var sttModeCard: some View {
-      SettingsCard(title: localized("Transcription Mode", locale: locale), icon: "waveform") {
+      SettingsCard(
+         title: localized("Transcription Mode", locale: locale),
+         icon: "waveform",
+         accessibilityIdentifier: "settings.ai.sttModeCard"
+      ) {
          VStack(alignment: .leading, spacing: 16) {
             Picker(localized("Speech-to-text mode", locale: locale), selection: sttModeBinding) {
                Text(localized("Local", locale: locale)).tag(STTMode.local)
                Text(localized("Remote (Engine)", locale: locale)).tag(STTMode.remote)
             }
             .pickerStyle(.segmented)
+            .accessibilityIdentifier("settings.ai.sttMode")
 
             Text(
                settings.sttMode == .local
@@ -298,7 +309,11 @@ struct AIEnhancementSettingsView: View {
    }
 
    private var localSTTCard: some View {
-      SettingsCard(title: localized("Local STT", locale: locale), icon: "desktopcomputer") {
+      SettingsCard(
+         title: localized("Local STT", locale: locale),
+         icon: "desktopcomputer",
+         accessibilityIdentifier: "settings.ai.localSTT"
+      ) {
          VStack(alignment: .leading, spacing: 16) {
             if localModels.isEmpty {
                Text(localized("No local transcription models are available yet.", locale: locale))
@@ -311,6 +326,7 @@ struct AIEnhancementSettingsView: View {
                   }
                }
                .pickerStyle(.menu)
+               .accessibilityIdentifier("settings.ai.local.model")
 
                if let selectedModelMetadata = localModels.first(where: { $0.name == settings.selectedModel }) {
                   VStack(alignment: .leading, spacing: 6) {
@@ -362,7 +378,11 @@ struct AIEnhancementSettingsView: View {
    }
 
    private var remoteSTTProviderCard: some View {
-      SettingsCard(title: localized("Remote STT Provider", locale: locale), icon: "icloud.and.arrow.up") {
+      SettingsCard(
+         title: localized("Remote STT Provider", locale: locale),
+         icon: "icloud.and.arrow.up",
+         accessibilityIdentifier: "settings.ai.remoteSTT"
+      ) {
          VStack(alignment: .leading, spacing: 16) {
             Picker(localized("Provider preset", locale: locale), selection: selectedEngineSTTProviderBinding) {
                ForEach(EngineSTTProviderPreset.allCases) { preset in
@@ -374,7 +394,8 @@ struct AIEnhancementSettingsView: View {
             engineTextField(
                title: localized("API Base", locale: locale),
                text: $settings.engineSTTAPIBase,
-               placeholder: settings.selectedEngineSTTProvider.defaultAPIBase
+               placeholder: settings.selectedEngineSTTProvider.defaultAPIBase,
+               accessibilityIdentifier: "settings.ai.remote.apiBase"
             )
 
             engineSecureField(
@@ -387,14 +408,19 @@ struct AIEnhancementSettingsView: View {
             engineTextField(
                title: localized("Model", locale: locale),
                text: $settings.engineSTTModel,
-               placeholder: settings.selectedEngineSTTProvider.defaultModel
+               placeholder: settings.selectedEngineSTTProvider.defaultModel,
+               accessibilityIdentifier: "settings.ai.remote.model"
             )
          }
       }
    }
 
    private var llmProviderCard: some View {
-      SettingsCard(title: localized("LLM Provider", locale: locale), icon: "sparkles.rectangle.stack") {
+      SettingsCard(
+         title: localized("LLM Provider", locale: locale),
+         icon: "sparkles.rectangle.stack",
+         accessibilityIdentifier: "settings.ai.llmProvider"
+      ) {
          VStack(alignment: .leading, spacing: 16) {
             Picker(localized("Provider preset", locale: locale), selection: selectedEngineLLMProviderBinding) {
                ForEach(EngineLLMProviderPreset.allCases) { preset in
@@ -406,7 +432,8 @@ struct AIEnhancementSettingsView: View {
             engineTextField(
                title: localized("API Base", locale: locale),
                text: $settings.engineLLMAPIBase,
-               placeholder: settings.selectedEngineLLMProvider.defaultAPIBase
+               placeholder: settings.selectedEngineLLMProvider.defaultAPIBase,
+               accessibilityIdentifier: "settings.ai.llm.apiBase"
             )
 
             engineSecureField(
@@ -421,19 +448,26 @@ struct AIEnhancementSettingsView: View {
             engineTextField(
                title: localized("Model", locale: locale),
                text: $settings.engineLLMModel,
-               placeholder: settings.selectedEngineLLMProvider.defaultModel
+               placeholder: settings.selectedEngineLLMProvider.defaultModel,
+               accessibilityIdentifier: "settings.ai.llm.model"
             )
          }
       }
    }
 
-   private func engineTextField(title: String, text: Binding<String>, placeholder: String) -> some View {
+   private func engineTextField(
+      title: String,
+      text: Binding<String>,
+      placeholder: String,
+      accessibilityIdentifier: String? = nil
+   ) -> some View {
       VStack(alignment: .leading, spacing: 6) {
          Text(title)
             .font(.subheadline.weight(.medium))
          TextField(placeholder, text: text)
             .textFieldStyle(.roundedBorder)
             .autocorrectionDisabled()
+            .accessibilityIdentifier(accessibilityIdentifier ?? "")
       }
    }
 

@@ -11,19 +11,26 @@ struct SettingsCard<Content: View, HeaderAccessory: View>: View {
     let title: String
     let icon: String
     let detail: String?
+    let accessibilityIdentifier: String?
     @ViewBuilder let headerAccessory: HeaderAccessory
     @ViewBuilder let content: Content
+
+    private var titleAccessibilityIdentifier: String? {
+        accessibilityIdentifier.map { "\($0).title" }
+    }
 
     init(
         title: String,
         icon: String,
         detail: String? = nil,
+        accessibilityIdentifier: String? = nil,
         @ViewBuilder headerAccessory: () -> HeaderAccessory,
         @ViewBuilder content: () -> Content
     ) {
         self.title = title
         self.icon = icon
         self.detail = detail
+        self.accessibilityIdentifier = accessibilityIdentifier
         self.headerAccessory = headerAccessory()
         self.content = content()
     }
@@ -32,9 +39,17 @@ struct SettingsCard<Content: View, HeaderAccessory: View>: View {
         title: String,
         icon: String,
         detail: String? = nil,
+        accessibilityIdentifier: String? = nil,
         @ViewBuilder content: () -> Content
     ) where HeaderAccessory == EmptyView {
-        self.init(title: title, icon: icon, detail: detail, headerAccessory: { EmptyView() }, content: content)
+        self.init(
+            title: title,
+            icon: icon,
+            detail: detail,
+            accessibilityIdentifier: accessibilityIdentifier,
+            headerAccessory: { EmptyView() },
+            content: content
+        )
     }
 
     var body: some View {
@@ -55,6 +70,7 @@ struct SettingsCard<Content: View, HeaderAccessory: View>: View {
                         Text(title)
                             .font(AppTypography.headline)
                             .foregroundStyle(AppColors.textPrimary)
+                            .accessibilityIdentifier(titleAccessibilityIdentifier ?? "")
 
                         if let detail, !detail.isEmpty {
                             Text(detail)
@@ -83,6 +99,20 @@ struct SettingsCard<Content: View, HeaderAccessory: View>: View {
                 .strokeBorder(AppColors.border.opacity(0.7), lineWidth: 1)
         )
         .shadow(AppTheme.Shadow.sm)
+        .settingsAccessibilityIdentifier(accessibilityIdentifier)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func settingsAccessibilityIdentifier(_ identifier: String?) -> some View {
+        if let identifier, !identifier.isEmpty {
+            self
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier(identifier)
+        } else {
+            self
+        }
     }
 }
 

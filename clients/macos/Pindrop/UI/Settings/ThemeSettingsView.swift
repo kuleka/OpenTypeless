@@ -37,7 +37,8 @@ struct ThemeSettingsView: View {
         SettingsCard(
             title: localized("Theme", locale: locale),
             icon: "paintbrush.pointed",
-            detail: localized("Choose how Pindrop follows system appearance, then mix curated light and dark palettes.", locale: locale)
+            detail: localized("Choose how Pindrop follows system appearance, then mix curated light and dark palettes.", locale: locale),
+            accessibilityIdentifier: "settings.theme.card.mode"
         ) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
                 Picker(localized("Theme mode", locale: locale), selection: modeBinding) {
@@ -83,7 +84,8 @@ struct ThemeSettingsView: View {
             icon: isLight ? "sun.max" : "moon.stars",
             detail: isLight
                 ? localized("Choose the daytime shell used in light mode.", locale: locale)
-                : localized("Choose the low-glare shell used in dark mode.", locale: locale)
+                : localized("Choose the low-glare shell used in dark mode.", locale: locale),
+            accessibilityIdentifier: isLight ? "settings.theme.card.light" : "settings.theme.card.dark"
         ) {
             LazyVGrid(columns: columns, alignment: .leading, spacing: AppTheme.Spacing.md) {
                 ForEach(PindropThemePresetCatalog.presets) { preset in
