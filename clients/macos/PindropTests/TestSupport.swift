@@ -8,6 +8,28 @@
 import Foundation
 @testable import Pindrop
 
+final class MockURLSession: URLSessionProtocol {
+    var mockData: Data?
+    var mockResponse: URLResponse?
+    var mockError: Error?
+    var lastRequest: URLRequest?
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        lastRequest = request
+        if let error = mockError {
+            throw error
+        }
+        let data = mockData ?? Data()
+        let response = mockResponse ?? HTTPURLResponse(
+            url: request.url!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+        return (data, response)
+    }
+}
+
 final class ManualTaskScheduler: TaskScheduling {
     private struct PendingTask {
         let sequence: Int
