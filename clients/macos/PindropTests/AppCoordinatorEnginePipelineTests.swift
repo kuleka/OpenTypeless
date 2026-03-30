@@ -147,6 +147,7 @@ private final class MockPipelineTranscriptionEngine: TranscriptionEngine {
     private(set) var state: TranscriptionEngineState = .unloaded
     private(set) var transcribeCallCount = 0
     var nextTranscript = ""
+    var nextError: Error?
 
     func loadModel(path: String) async throws {
         state = .ready
@@ -158,6 +159,9 @@ private final class MockPipelineTranscriptionEngine: TranscriptionEngine {
 
     func transcribe(audioData: Data, options: TranscriptionOptions) async throws -> String {
         transcribeCallCount += 1
+        if let nextError {
+            throw nextError
+        }
         return nextTranscript
     }
 
@@ -335,7 +339,9 @@ struct AppCoordinatorEnginePipelineTests {
         #expect(mockEngineClient.healthCallCount == 1)
         #expect(mockEngineClient.fetchConfigCallCount == 0)
         #expect(mockEngineClient.pushConfigCallCount == 1)
-        #expect(mockEngineClient.lastPushedConfig?.stt?.model == "whisper-large-v3")
+        #expect(coordinator.settingsStore.engineRuntimeState.phase == .ready)
+        #expect(coordinator.settingsStore.engineRuntimeState.version == "1.4.0-draft")
+        #expect(mockEngineClient.lastPushedConfig?.stt == nil)
         #expect(mockEngineClient.lastPushedConfig?.llm?.apiBase == "https://openrouter.ai/api/v1")
         #expect(mockEngineClient.lastPushedConfig?.llm?.apiKey == "sk-or-test")
         #expect(mockEngineClient.lastPushedConfig?.llm?.model == "openai/gpt-4o-mini")
@@ -361,8 +367,9 @@ struct AppCoordinatorEnginePipelineTests {
 
         #expect(mockEngineClient.healthCallCount == 1)
         #expect(mockEngineClient.pushConfigCallCount == 1)
+        #expect(coordinator.settingsStore.engineRuntimeState.phase == .ready)
         #expect(mockEngineClient.lastPushedConfig?.llm?.apiKey == "sk-or-live")
-        #expect(mockEngineClient.lastPushedConfig?.stt?.apiKey == "gsk-live")
+        #expect(mockEngineClient.lastPushedConfig?.stt == nil)
 
         coordinator.cleanup()
     }
@@ -385,6 +392,7 @@ struct AppCoordinatorEnginePipelineTests {
 
         #expect(mockEngineClient.healthCallCount == 1)
         #expect(mockEngineClient.pushConfigCallCount == 0)
+        #expect(coordinator.settingsStore.engineRuntimeState.phase == .offline)
 
         coordinator.cleanup()
     }
@@ -405,6 +413,46 @@ struct AppCoordinatorEnginePipelineTests {
         #expect(mockEngineClient.healthCallCount == 1)
         #expect(mockEngineClient.fetchConfigCallCount == 0)
         #expect(mockEngineClient.pushConfigCallCount == 0)
+        #expect(coordinator.settingsStore.engineRuntimeState.phase == .offline)
+
+        coordinator.cleanup()
+    }
+
+    @Test func startupSyncMarksRemoteModeAsSetupNeededWhenSTTConfigIsMissing() async throws {
+        let mockEngineClient = MockEngineStartupClient()
+        let coordinator = try makeCoordinator(
+            engineStartupHandlers: mockEngineClient.handlers()
+        )
+        coordinator.settingsStore.sttMode = .remote
+        coordinator.settingsStore.engineLLMAPIBase = "https://openrouter.ai/api/v1"
+        coordinator.settingsStore.engineLLMModel = "openai/gpt-4o-mini"
+        try coordinator.settingsStore.saveEngineLLMAPIKey("sk-or-test")
+
+        await coordinator.syncEngineConfigurationOnStartup()
+
+        #expect(mockEngineClient.healthCallCount == 1)
+        #expect(mockEngineClient.pushConfigCallCount == 0)
+        #expect(coordinator.settingsStore.engineRuntimeState.phase == .needsConfiguration)
+        #expect(coordinator.settingsStore.engineRuntimeState.missingConfiguration == .stt)
+
+        coordinator.cleanup()
+    }
+
+    @Test func manualEngineRuntimeRecheckUsesCurrentSettings() async throws {
+        let mockEngineClient = MockEngineStartupClient()
+        let coordinator = try makeCoordinator(
+            engineStartupHandlers: mockEngineClient.handlers()
+        )
+        coordinator.settingsStore.engineLLMAPIBase = "https://openrouter.ai/api/v1"
+        coordinator.settingsStore.engineLLMModel = "openai/gpt-4o-mini"
+        try coordinator.settingsStore.saveEngineLLMAPIKey("sk-or-test")
+
+        coordinator.settingsStore.requestEngineRuntimeRecheck()
+        try await Task.sleep(for: .milliseconds(150))
+
+        #expect(mockEngineClient.healthCallCount == 1)
+        #expect(mockEngineClient.pushConfigCallCount == 1)
+        #expect(coordinator.settingsStore.engineRuntimeState.phase == .ready)
 
         coordinator.cleanup()
     }
@@ -443,6 +491,9 @@ struct AppCoordinatorEnginePipelineTests {
             toastPresenter: presenter
         )
         coordinator.settingsStore.aiEnhancementEnabled = true
+        coordinator.settingsStore.updateEngineRuntimeState(
+            .ready(version: "1.4.0-draft", detail: "Engine is ready for local dictation with text polishing.")
+        )
 
         let result = await coordinator.polishTranscribedTextIfNeeded(
             "draft this follow-up",
@@ -473,6 +524,9 @@ struct AppCoordinatorEnginePipelineTests {
             toastPresenter: presenter
         )
         coordinator.settingsStore.aiEnhancementEnabled = true
+        coordinator.settingsStore.updateEngineRuntimeState(
+            .ready(version: "1.4.0-draft", detail: "Engine is ready for local dictation with text polishing.")
+        )
 
         let result = await coordinator.polishTranscribedTextIfNeeded(
             "leave this raw",
@@ -485,8 +539,9 @@ struct AppCoordinatorEnginePipelineTests {
         #expect(result.didAttemptPolish)
         #expect(result.usedFallback)
         #expect(presenter.shownPayloads.count == 1)
-        #expect(presenter.shownPayloads.first?.message == "Engine is offline. Transcription inserted without polishing.")
+        #expect(presenter.shownPayloads.first?.message == "Engine is offline. Local transcription was inserted without polishing. Start Engine, then press Recheck in Settings.")
         #expect(presenter.shownPayloads.first?.style == .error)
+        #expect(coordinator.settingsStore.engineRuntimeState.phase == .offline)
 
         coordinator.cleanup()
     }
@@ -522,6 +577,9 @@ struct AppCoordinatorEnginePipelineTests {
         )
 
         coordinator.settingsStore.aiEnhancementEnabled = true
+        coordinator.settingsStore.updateEngineRuntimeState(
+            .ready(version: "1.4.0-draft", detail: "Engine is ready for local dictation with text polishing.")
+        )
         try coordinator.dictionaryStore.add(
             WordReplacement(originals: ["doctor"], replacement: "Dr.", sortOrder: 0)
         )
@@ -578,6 +636,9 @@ struct AppCoordinatorEnginePipelineTests {
         )
 
         coordinator.settingsStore.aiEnhancementEnabled = true
+        coordinator.settingsStore.updateEngineRuntimeState(
+            .ready(version: "1.4.0-draft", detail: "Engine is ready for remote transcription and text polishing.")
+        )
 
         try await coordinator.processRecordedAudioData(
             makeFloatAudioData(seconds: 1.0),
@@ -623,6 +684,9 @@ struct AppCoordinatorEnginePipelineTests {
         )
 
         coordinator.settingsStore.aiEnhancementEnabled = true
+        coordinator.settingsStore.updateEngineRuntimeState(
+            .ready(version: "1.4.0-draft", detail: "Engine is ready for local dictation with text polishing.")
+        )
 
         try await coordinator.processRecordedAudioData(
             makeFloatAudioData(seconds: 1.0),
@@ -634,13 +698,77 @@ struct AppCoordinatorEnginePipelineTests {
         #expect(outputFixture.clipboard.copiedHistory.last == "send update tomorrow ")
         #expect(outputFixture.clipboard.restoreCount == 1)
         #expect(presenter.shownPayloads.count == 1)
-        #expect(presenter.shownPayloads.first?.message == "Engine is offline. Transcription inserted without polishing.")
+        #expect(presenter.shownPayloads.first?.message == "Engine is offline. Local transcription was inserted without polishing. Start Engine, then press Recheck in Settings.")
+        #expect(coordinator.settingsStore.engineRuntimeState.phase == .offline)
 
         let records = try coordinator.historyStore.fetch(limit: 1)
         #expect(records.count == 1)
         #expect(records.first?.text == "send update tomorrow")
         #expect(records.first?.originalText == "send update tomorrow")
         #expect(records.first?.enhancedWith == nil)
+
+        coordinator.cleanup()
+    }
+
+    @Test func remoteSTTPipelineStopsEarlyWhenRuntimeIsNotReady() async throws {
+        let presenter = RecordingToastPresenter()
+        let remoteEngine = MockPipelineTranscriptionEngine()
+        let transcriptionService = makeTranscriptionService(
+            mode: .remote,
+            remoteEngine: remoteEngine
+        )
+        try await transcriptionService.loadModel(modelName: "tiny", provider: .whisperKit)
+        let outputFixture = makePastingOutputManager()
+        let coordinator = try makeCoordinator(
+            transcriptionService: transcriptionService,
+            outputManager: outputFixture.outputManager,
+            toastPresenter: presenter
+        )
+        coordinator.settingsStore.sttMode = .remote
+        coordinator.settingsStore.updateEngineRuntimeState(
+            .offline(detail: "Engine is not reachable at 127.0.0.1:19823.")
+        )
+
+        try await coordinator.processRecordedAudioData(
+            makeFloatAudioData(seconds: 1.0),
+            duration: 1.0
+        )
+
+        #expect(remoteEngine.transcribeCallCount == 0)
+        #expect(outputFixture.keySimulation.pasteSimulated == false)
+        #expect(outputFixture.clipboard.copiedHistory.isEmpty)
+        #expect(presenter.shownPayloads.first?.message == "Engine is offline. Start Engine or switch Transcription Mode back to Local in Settings.")
+
+        coordinator.cleanup()
+    }
+
+    @Test func remoteSTTEngineFailureTransitionsRuntimeStateBackToOffline() async throws {
+        let presenter = RecordingToastPresenter()
+        let remoteEngine = MockPipelineTranscriptionEngine()
+        remoteEngine.nextError = EngineClientError.connectionFailed
+        let transcriptionService = makeTranscriptionService(
+            mode: .remote,
+            remoteEngine: remoteEngine
+        )
+        try await transcriptionService.loadModel(modelName: "tiny", provider: .whisperKit)
+        let coordinator = try makeCoordinator(
+            transcriptionService: transcriptionService,
+            toastPresenter: presenter
+        )
+        coordinator.settingsStore.sttMode = .remote
+        coordinator.settingsStore.updateEngineRuntimeState(
+            .ready(version: "1.4.0-draft", detail: "Engine is ready for remote transcription and text polishing.")
+        )
+
+        await #expect(throws: TranscriptionService.TranscriptionError.self) {
+            try await coordinator.processRecordedAudioData(
+                makeFloatAudioData(seconds: 1.0),
+                duration: 1.0
+            )
+        }
+
+        #expect(remoteEngine.transcribeCallCount == 1)
+        #expect(coordinator.settingsStore.engineRuntimeState.phase == .offline)
 
         coordinator.cleanup()
     }

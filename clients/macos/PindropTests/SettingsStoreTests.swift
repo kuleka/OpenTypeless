@@ -460,6 +460,69 @@ struct SettingsStoreTests {
         #expect(settingsStore.vibeRuntimeDetail == "Vibe mode is disabled.")
     }
 
+    @Test func testEngineRuntimeRecheckMarksCheckingAndIncrementsSequence() {
+        let settingsStore = makeSettingsStore()
+        defer { cleanup(settingsStore) }
+
+        settingsStore.updateEngineRuntimeState(
+            .offline(detail: "Engine is not reachable at 127.0.0.1:19823.")
+        )
+
+        settingsStore.requestEngineRuntimeRecheck()
+
+        #expect(settingsStore.engineRuntimeState.phase == .checking)
+        #expect(settingsStore.engineRuntimeState.detail == "Rechecking Engine runtime...")
+        #expect(settingsStore.engineRuntimeRecheckSequence == 1)
+
+        settingsStore.requestEngineRuntimeRecheck()
+        #expect(settingsStore.engineRuntimeRecheckSequence == 2)
+    }
+
+    @Test func testResetAllSettingsResetsEngineRuntimeState() {
+        let settingsStore = makeSettingsStore()
+        defer { cleanup(settingsStore) }
+
+        settingsStore.updateEngineRuntimeState(
+            .ready(version: "1.4.0-draft", detail: "Engine is ready for remote transcription and text polishing.")
+        )
+        settingsStore.requestEngineRuntimeRecheck()
+
+        settingsStore.resetAllSettings()
+
+        #expect(settingsStore.engineRuntimeState.phase == .checking)
+        #expect(settingsStore.engineRuntimeState.detail == "Checking Engine runtime...")
+        #expect(settingsStore.engineRuntimeRecheckSequence == 0)
+    }
+
+    @Test func testEngineRuntimePresentationForOfflineRemoteMode() {
+        let presentation = EngineRuntimePresentation(
+            runtimeState: .offline(detail: "Engine is not reachable at 127.0.0.1:19823."),
+            sttMode: .remote,
+            locale: Locale(identifier: "en_US")
+        )
+
+        #expect(presentation.statusLabel == "Offline")
+        #expect(presentation.detail == "Engine is not reachable at 127.0.0.1:19823.")
+        #expect(presentation.guidance == "Start Engine in another terminal, then press Recheck, or switch Transcription Mode back to Local.")
+        #expect(presentation.recheckTitle == "Reconnect")
+        #expect(presentation.isBusy == false)
+    }
+
+    @Test func testEngineRuntimePresentationForSetupNeededLocalMode() {
+        let presentation = EngineRuntimePresentation(
+            runtimeState: .needsConfiguration(
+                .llm,
+                detail: "Add an LLM provider base URL, model, and API key to enable Engine polish."
+            ),
+            sttMode: .local,
+            locale: Locale(identifier: "en_US")
+        )
+
+        #expect(presentation.statusLabel == "Setup Needed")
+        #expect(presentation.guidance == "Add an LLM provider base URL, model, and API key, then press Recheck.")
+        #expect(presentation.recheckTitle == "Recheck")
+    }
+
     @Test func testResolveMentionFormattingUsesTerminalProviderDefaultTemplate() {
         let settingsStore = makeSettingsStore()
         defer { cleanup(settingsStore) }

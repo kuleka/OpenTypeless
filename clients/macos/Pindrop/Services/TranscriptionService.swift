@@ -26,6 +26,7 @@ class TranscriptionService {
         case invalidAudioData
         case transcriptionFailed(String)
         case modelLoadFailed(String)
+        case engineRuntimeFailure(EngineClientError)
         case engineSwitchDuringTranscription
         case streamingModelNotAvailable(String)
         case streamingNotReady
@@ -43,6 +44,8 @@ class TranscriptionService {
                 return "Transcription failed: \(message)"
             case .modelLoadFailed(let message):
                 return "Model load failed: \(message)"
+            case .engineRuntimeFailure(let error):
+                return error.localizedDescription
             case .engineSwitchDuringTranscription:
                 return "Cannot switch engines during active transcription"
             case .streamingModelNotAvailable(let path):
@@ -303,6 +306,9 @@ class TranscriptionService {
         } catch let error as TranscriptionError {
             state = .ready
             throw error
+        } catch let error as EngineClientError {
+            state = .ready
+            throw TranscriptionError.engineRuntimeFailure(error)
         } catch {
             state = .ready
             throw TranscriptionError.transcriptionFailed(error.localizedDescription)

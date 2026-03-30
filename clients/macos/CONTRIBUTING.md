@@ -81,6 +81,23 @@ When working in this repo, assume three layers are currently coexisting:
 
 The main dictation flow is migrated. Do not assume every auxiliary flow has been migrated.
 
+### Engine Runtime Onboarding
+
+Phase 2 adds a shared runtime onboarding model around the local Engine. Preserve these rules when touching startup, settings, or dictation behavior:
+
+- `SettingsStore.engineRuntimeState` is the shared source of truth for Engine runtime readiness.
+- Runtime state is not a boolean. The app distinguishes `checking`, `offline`, `needsConfiguration`, `syncing`, `ready`, and recoverable `error` states.
+- Readiness is mode-aware:
+  - `Local` STT mode only requires valid LLM settings because local dictation can continue without Engine-backed STT.
+  - `Remote` STT mode requires both remote STT and LLM settings before dictation is ready.
+- Manual recovery is explicit. Startup, relevant settings changes, and `SettingsStore.requestEngineRuntimeRecheck()` are the supported re-evaluation triggers.
+- Avoid background polling or per-view health checks. The settings UI should render the shared runtime state instead of deriving its own connection logic.
+
+Fallback behavior is also mode-aware:
+
+- In `Local` STT mode, Engine failures should preserve dictation output and show actionable recovery guidance.
+- In `Remote` STT mode, Engine readiness failures should stop the dictation attempt before transcription begins.
+
 ### Branch Naming
 
 Use descriptive, prefixed branch names:
@@ -269,6 +286,26 @@ xcodebuild test \
 ```
 
 This is the most reliable full-app test command for the current local setup.
+
+For runtime onboarding work, these focused tests are useful:
+
+```bash
+cd clients/macos
+xcodebuild test \
+  -project Pindrop.xcodeproj \
+  -scheme Pindrop \
+  -destination 'platform=macOS' \
+  -derivedDataPath /tmp/OpenTypelessDerivedData \
+  -clonedSourcePackagesDirPath /tmp/OpenTypelessSourcePackages \
+  -only-testing:PindropTests/SettingsStoreTests \
+  -only-testing:PindropTests/AppCoordinatorEnginePipelineTests \
+  CODE_SIGNING_ALLOWED=NO \
+  CODE_SIGNING_REQUIRED=NO \
+  CODE_SIGN_IDENTITY='' \
+  DEVELOPMENT_TEAM=''
+```
+
+This covers runtime state evaluation, explicit recheck, and mode-aware fallback behavior.
 
 ### Test Isolation
 

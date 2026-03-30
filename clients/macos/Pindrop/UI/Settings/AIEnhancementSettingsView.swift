@@ -8,6 +8,85 @@
 import SwiftData
 import SwiftUI
 
+struct EngineRuntimePresentation: Equatable {
+   let statusLabel: String
+   let detail: String
+   let guidance: String?
+   let recheckTitle: String
+   let isBusy: Bool
+
+   init(runtimeState: EngineRuntimeState, sttMode: STTMode, locale: Locale) {
+      switch runtimeState.phase {
+      case .checking:
+         statusLabel = localized("Checking...", locale: locale)
+         detail = localized(runtimeState.detail, locale: locale)
+         guidance = nil
+         recheckTitle = localized("Checking...", locale: locale)
+         isBusy = true
+      case .syncing:
+         statusLabel = localized("Syncing...", locale: locale)
+         detail = localized(runtimeState.detail, locale: locale)
+         guidance = nil
+         recheckTitle = localized("Syncing...", locale: locale)
+         isBusy = true
+      case .ready:
+         if let version = runtimeState.version, !version.isEmpty {
+            statusLabel = String(
+               format: localized("Ready (v%@)", locale: locale),
+               version
+            )
+         } else {
+            statusLabel = localized("Ready", locale: locale)
+         }
+         detail = localized(runtimeState.detail, locale: locale)
+         guidance = nil
+         recheckTitle = localized("Recheck", locale: locale)
+         isBusy = false
+      case .offline:
+         statusLabel = localized("Offline", locale: locale)
+         detail = localized(runtimeState.detail, locale: locale)
+         guidance = sttMode == .local
+            ? localized("Start Engine in another terminal, then press Recheck. Local dictation can still run without polishing.", locale: locale)
+            : localized("Start Engine in another terminal, then press Recheck, or switch Transcription Mode back to Local.", locale: locale)
+         recheckTitle = localized("Reconnect", locale: locale)
+         isBusy = false
+      case .needsConfiguration:
+         statusLabel = localized("Setup Needed", locale: locale)
+         detail = localized(runtimeState.detail, locale: locale)
+         guidance = Self.runtimeGuidance(
+            for: runtimeState.missingConfiguration,
+            sttMode: sttMode,
+            locale: locale
+         )
+         recheckTitle = localized("Recheck", locale: locale)
+         isBusy = false
+      case .error:
+         statusLabel = localized("Needs Attention", locale: locale)
+         detail = localized(runtimeState.detail, locale: locale)
+         guidance = localized("Fix the Engine setup issue, then press Recheck.", locale: locale)
+         recheckTitle = localized("Recheck", locale: locale)
+         isBusy = false
+      }
+   }
+
+   private static func runtimeGuidance(
+      for missingConfiguration: EngineRuntimeState.MissingConfiguration?,
+      sttMode: STTMode,
+      locale: Locale
+   ) -> String {
+      switch (sttMode, missingConfiguration) {
+      case (.local, _):
+         return localized("Add an LLM provider base URL, model, and API key, then press Recheck.", locale: locale)
+      case (.remote, .llm):
+         return localized("Add an LLM provider base URL, model, and API key, or switch Transcription Mode back to Local.", locale: locale)
+      case (.remote, .stt):
+         return localized("Add a Remote STT provider base URL, model, and API key, or switch Transcription Mode back to Local.", locale: locale)
+      case (.remote, .sttAndLLM), (.remote, nil):
+         return localized("Add both Remote STT and LLM provider settings, or switch Transcription Mode back to Local.", locale: locale)
+      }
+   }
+}
+
 struct AIEnhancementSettingsView: View {
    @ObservedObject var settings: SettingsStore
    @Environment(\.modelContext) private var modelContext
@@ -34,8 +113,6 @@ struct AIEnhancementSettingsView: View {
    @State private var accessibilityPermissionRequestInFlight = false
    @State private var engineSTTAPIKey = ""
    @State private var engineLLMAPIKey = ""
-   @State private var engineConnectionStatus: EngineConnectionStatus = .checking
-   @State private var engineConnectionTask: Task<Void, Never>?
    @State private var localModels: [ModelManager.WhisperModel] = []
    @State private var downloadedLocalModelNames: Set<String> = []
    @State private var activeLocalModelOperation: String?
@@ -90,6 +167,14 @@ struct AIEnhancementSettingsView: View {
       )
    }
 
+   private var engineRuntimePresentation: EngineRuntimePresentation {
+      EngineRuntimePresentation(
+         runtimeState: settings.engineRuntimeState,
+         sttMode: settings.sttMode,
+         locale: locale
+      )
+   }
+
    enum PromptType: String, CaseIterable, Identifiable {
       case transcription = "Transcription"
       case notes = "Notes"
@@ -114,34 +199,6 @@ struct AIEnhancementSettingsView: View {
        }
    }
 
-   enum EngineConnectionStatus: Equatable {
-      case checking
-      case connected(version: String)
-      case disconnected
-
-      var label: String {
-         switch self {
-         case .checking:
-            return "Checking..."
-         case .connected(let version):
-            return "Connected (v\(version))"
-         case .disconnected:
-            return "Disconnected"
-         }
-      }
-
-      var tint: Color {
-         switch self {
-         case .checking:
-            return AppColors.textSecondary
-         case .connected:
-            return .green
-         case .disconnected:
-            return AppColors.warning
-         }
-      }
-   }
-
    var body: some View {
       VStack(spacing: AppTheme.Spacing.xl) {
          enableToggleCard
@@ -154,19 +211,12 @@ struct AIEnhancementSettingsView: View {
          loadSettingsState()
          refreshPermissionStates()
          await refreshLocalModels()
-         scheduleEngineConnectionCheck(immediate: true)
       }
       .onChange(of: settings.selectedPresetId) { _, newValue in
          handlePresetChange(newValue)
       }
       .onChange(of: enhancementPrompt) { _, newValue in
          handlePromptChange(newValue)
-      }
-      .onChange(of: settings.engineHost) { _, _ in
-         scheduleEngineConnectionCheck()
-      }
-      .onChange(of: settings.enginePort) { _, _ in
-         scheduleEngineConnectionCheck()
       }
       .onChange(of: settings.selectedEngineSTTProvider) { _, newValue in
          applySTTPreset(newValue)
@@ -235,7 +285,16 @@ struct AIEnhancementSettingsView: View {
       SettingsCard(
          title: localized("Engine Connection", locale: locale),
          icon: "server.rack",
-         accessibilityIdentifier: "settings.ai.engineConnection"
+         accessibilityIdentifier: "settings.ai.engineConnection",
+         headerAccessory: {
+            SettingsCardActionButton(
+               title: engineRuntimePresentation.recheckTitle
+            ) {
+               settings.requestEngineRuntimeRecheck()
+            }
+            .disabled(engineRuntimePresentation.isBusy)
+            .accessibilityIdentifier("settings.ai.engine.recheck")
+         }
       ) {
          VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 16) {
@@ -267,16 +326,31 @@ struct AIEnhancementSettingsView: View {
                      .font(.subheadline.weight(.medium))
                   HStack(spacing: 8) {
                      Circle()
-                        .fill(engineConnectionStatus.tint)
+                        .fill(engineRuntimeTint)
                         .frame(width: 8, height: 8)
-                     Text(engineConnectionStatus.label)
+                     Text(engineRuntimePresentation.statusLabel)
                         .font(AppTypography.caption)
-                        .foregroundStyle(engineConnectionStatus.tint)
+                        .foregroundStyle(engineRuntimeTint)
+                        .accessibilityIdentifier("settings.ai.engine.status")
                   }
                }
             }
 
-            Text(localized("Client talks to Engine over localhost HTTP. Host and port changes take effect for the next health check, remote STT call, and polish request.", locale: locale))
+            Text(engineRuntimePresentation.detail)
+               .font(AppTypography.caption)
+               .foregroundStyle(AppColors.textSecondary)
+
+            if let guidance = engineRuntimePresentation.guidance {
+               SettingsInfoBanner(
+                  icon: engineRuntimeBannerIcon,
+                  text: guidance,
+                  tint: engineRuntimeBannerTint,
+                  background: engineRuntimeBannerTint.opacity(0.12)
+               )
+               .accessibilityIdentifier("settings.ai.engine.guidance")
+            }
+
+            Text(localized("Client talks to Engine over localhost HTTP. Host and port and provider changes are rechecked automatically, and you can run Recheck any time after starting Engine manually.", locale: locale))
                .font(AppTypography.caption)
                .foregroundStyle(AppColors.textSecondary)
          }
@@ -1377,28 +1451,38 @@ struct AIEnhancementSettingsView: View {
       engineLLMAPIKey = settings.loadEngineLLMAPIKey(for: preset) ?? ""
    }
 
-   private func scheduleEngineConnectionCheck(immediate: Bool = false) {
-      engineConnectionTask?.cancel()
-      engineConnectionTask = Task {
-         if !immediate {
-            try? await Task.sleep(for: .milliseconds(300))
-         }
-         guard !Task.isCancelled else { return }
-         await refreshEngineConnectionStatus()
+   private var engineRuntimeTint: Color {
+      switch settings.engineRuntimeState.phase {
+      case .checking, .syncing:
+         return AppColors.textSecondary
+      case .ready:
+         return .green
+      case .offline, .needsConfiguration, .error:
+         return AppColors.warning
       }
    }
 
-   @MainActor
-   private func refreshEngineConnectionStatus() async {
-      engineConnectionStatus = .checking
-      do {
-         let response = try await EngineClient(
-            host: settings.engineHost,
-            port: settings.enginePort
-         ).health()
-         engineConnectionStatus = .connected(version: response.version)
-      } catch {
-         engineConnectionStatus = .disconnected
+   private var engineRuntimeBannerTint: Color {
+      switch settings.engineRuntimeState.phase {
+      case .error:
+         return AppColors.warning
+      case .offline, .needsConfiguration:
+         return AppColors.accent
+      case .checking, .syncing, .ready:
+         return AppColors.textSecondary
+      }
+   }
+
+   private var engineRuntimeBannerIcon: String {
+      switch settings.engineRuntimeState.phase {
+      case .offline:
+         return "bolt.horizontal.circle"
+      case .needsConfiguration:
+         return "slider.horizontal.3"
+      case .error:
+         return "exclamationmark.triangle"
+      case .checking, .syncing, .ready:
+         return "info.circle"
       }
    }
 

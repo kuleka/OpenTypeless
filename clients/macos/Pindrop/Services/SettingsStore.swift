@@ -105,6 +105,98 @@ enum STTMode: String, CaseIterable, Sendable, Identifiable {
    var id: String { rawValue }
 }
 
+struct EngineRuntimeState: Equatable, Sendable {
+   enum Phase: String, Sendable {
+      case checking
+      case offline
+      case needsConfiguration
+      case syncing
+      case ready
+      case error
+   }
+
+   enum MissingConfiguration: String, Sendable {
+      case llm
+      case stt
+      case sttAndLLM
+   }
+
+   let phase: Phase
+   let detail: String
+   let version: String?
+   let missingConfiguration: MissingConfiguration?
+
+   static func checking(detail: String = "Checking Engine runtime...") -> EngineRuntimeState {
+      EngineRuntimeState(
+         phase: .checking,
+         detail: detail,
+         version: nil,
+         missingConfiguration: nil
+      )
+   }
+
+   static func offline(
+      detail: String = "Engine is not reachable at the configured host and port."
+   ) -> EngineRuntimeState {
+      EngineRuntimeState(
+         phase: .offline,
+         detail: detail,
+         version: nil,
+         missingConfiguration: nil
+      )
+   }
+
+   static func needsConfiguration(
+      _ missingConfiguration: MissingConfiguration,
+      detail: String
+   ) -> EngineRuntimeState {
+      EngineRuntimeState(
+         phase: .needsConfiguration,
+         detail: detail,
+         version: nil,
+         missingConfiguration: missingConfiguration
+      )
+   }
+
+   static func syncing(version: String?) -> EngineRuntimeState {
+      EngineRuntimeState(
+         phase: .syncing,
+         detail: "Syncing the current Engine settings...",
+         version: version,
+         missingConfiguration: nil
+      )
+   }
+
+   static func ready(
+      version: String?,
+      detail: String
+   ) -> EngineRuntimeState {
+      EngineRuntimeState(
+         phase: .ready,
+         detail: detail,
+         version: version,
+         missingConfiguration: nil
+      )
+   }
+
+   static func error(detail: String) -> EngineRuntimeState {
+      EngineRuntimeState(
+         phase: .error,
+         detail: detail,
+         version: nil,
+         missingConfiguration: nil
+      )
+   }
+
+   var isBusy: Bool {
+      phase == .checking || phase == .syncing
+   }
+
+   var isReady: Bool {
+      phase == .ready
+   }
+}
+
 enum EngineSTTProviderPreset: String, CaseIterable, Sendable, Identifiable {
    case groq
    case openAI = "openai"
@@ -442,6 +534,8 @@ final class SettingsStore: ObservableObject {
 
    @Published private(set) var vibeRuntimeState: VibeRuntimeState = .degraded
    @Published private(set) var vibeRuntimeDetail: String = "Vibe mode is disabled."
+   @Published private(set) var engineRuntimeState: EngineRuntimeState = .checking()
+   @Published private(set) var engineRuntimeRecheckSequence = 0
    @Published private(set) var isApplyingHotkeyUpdate = false
 
    // MARK: - Onboarding State
@@ -1049,6 +1143,8 @@ final class SettingsStore: ObservableObject {
       vibeLiveSessionEnabled = true
       vibeRuntimeState = .degraded
       vibeRuntimeDetail = "Vibe mode is disabled."
+      engineRuntimeState = .checking()
+      engineRuntimeRecheckSequence = 0
       hasCompletedOnboarding = false
       currentOnboardingStep = 0
 
@@ -1095,6 +1191,16 @@ final class SettingsStore: ObservableObject {
       guard vibeRuntimeState != state || vibeRuntimeDetail != detail else { return }
       vibeRuntimeState = state
       vibeRuntimeDetail = detail
+   }
+
+   func updateEngineRuntimeState(_ state: EngineRuntimeState) {
+      guard engineRuntimeState != state else { return }
+      engineRuntimeState = state
+   }
+
+   func requestEngineRuntimeRecheck() {
+      engineRuntimeState = .checking(detail: "Rechecking Engine runtime...")
+      engineRuntimeRecheckSequence += 1
    }
 
    func updateToggleHotkey(_ hotkey: String, keyCode: Int, modifiers: Int) {

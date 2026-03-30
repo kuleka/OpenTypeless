@@ -28,6 +28,8 @@ As of the completed Phase 1 migration:
 - Engine-based polish is wired into the main dictation flow
 - `AppCoordinator` startup sync and output pipeline are connected
 - Engine settings UI and config persistence are implemented
+- Engine runtime onboarding now distinguishes checking, offline, setup-needed, syncing, ready, and recoverable error states
+- Settings includes a manual `Recheck` / `Reconnect` action for local Engine recovery
 - UI smoke tests cover the settings fixture surfaces
 
 The primary dictation path is now running through the `Client + Engine` split. A few auxiliary legacy flows still remain.
@@ -57,6 +59,26 @@ Important migration note:
 
 - `AIEnhancementService` still exists because a few auxiliary legacy app flows have not been migrated yet.
 - Xcode targets and many path names still use `Pindrop` for continuity.
+
+## Engine Runtime Readiness
+
+Engine runtime state is shared across startup sync, dictation fallback behavior, and the `Engine & AI` settings surface.
+
+- `Checking` and `Syncing` mean the app is actively evaluating or pushing the current Engine configuration.
+- `Offline` means `GET /health` could not reach the configured host and port.
+- `Setup Needed` means Engine is reachable, but the active mode is still missing required provider settings.
+- `Ready` means the current mode has what it needs for the next dictation request.
+- `Needs Attention` is a recoverable runtime error such as a failed config sync or later Engine request failure.
+
+Readiness is mode-aware:
+
+- In `Local` STT mode, Engine only needs valid LLM settings because dictation can still run locally and use Engine for `/polish`.
+- In `Remote` STT mode, Engine needs both remote STT and LLM settings before dictation is actually ready.
+
+Recovery is also mode-aware:
+
+- If Engine is unavailable in `Local` STT mode, the app still outputs the local transcript and shows guidance to start Engine and press `Recheck`.
+- If Engine is unavailable in `Remote` STT mode, the app stops the remote dictation attempt and tells the user to start Engine or switch back to `Local`.
 
 ## Requirements
 

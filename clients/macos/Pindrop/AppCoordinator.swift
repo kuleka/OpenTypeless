@@ -182,6 +182,7 @@ struct SettingsObservationSnapshot: Equatable {
     let vibeLiveSessionEnabled: Bool
     let hotkeys: HotkeySettingsSnapshot
     let engine: EngineSettingsSnapshot
+    let engineRuntimeRecheckSequence: Int
 }
 
 @MainActor
@@ -209,6 +210,17 @@ final class AppCoordinator {
         let enhancedWithModel: String?
         let didAttemptPolish: Bool
         let usedFallback: Bool
+    }
+
+    private enum EngineRuntimeEvaluationTrigger {
+        case startup
+        case settingsChange
+        case manualRecheck
+    }
+
+    private enum EngineConfigurationReadiness {
+        case ready(ConfigRequest)
+        case incomplete(EngineRuntimeState.MissingConfiguration)
     }
 
     private static var isRunningTests: Bool {
@@ -377,7 +389,7 @@ final class AppCoordinator {
     private var modifierEventTapRecoveryTask: Task<Void, Never>?
     private var lastEscapeTime: Date?
     private var lastEscapeSignalTime: Date?
-    private var engineConfigSyncTask: Task<Void, Never>?
+    private var engineRuntimeEvaluationTask: Task<Void, Never>?
     private let doubleEscapeThreshold: TimeInterval = 0.4
     private let duplicateEscapeSignalThreshold: TimeInterval = 0.08
     private let eventTapRecoveryDelay: Duration = .milliseconds(250)
@@ -771,33 +783,7 @@ final class AppCoordinator {
     }
 
     func syncEngineConfigurationOnStartup() async {
-        guard let requestBody = currentEngineConfigRequest() else {
-            Log.boot.info("Skipping Engine config push because local Engine settings are incomplete")
-            return
-        }
-
-        do {
-            _ = try await engineStartupHandlers.health()
-        } catch let error as EngineClientError {
-            if error == .connectionFailed {
-                Log.boot.info("Engine unavailable during startup health check; continuing without Engine polish")
-            } else {
-                Log.boot.warning("Engine health check failed during startup: \(error.localizedDescription)")
-            }
-            return
-        } catch {
-            Log.boot.warning("Engine health check failed during startup: \(error.localizedDescription)")
-            return
-        }
-
-        do {
-            _ = try await engineStartupHandlers.pushConfig(requestBody)
-            Log.boot.info("Engine config synchronized on startup")
-        } catch let error as EngineClientError {
-            Log.boot.warning("Engine config synchronization failed during startup: \(error.localizedDescription)")
-        } catch {
-            Log.boot.warning("Engine config synchronization failed during startup: \(error.localizedDescription)")
-        }
+        await evaluateEngineRuntime(trigger: .startup)
     }
 
     func polishTranscribedTextIfNeeded(
@@ -811,6 +797,23 @@ final class AppCoordinator {
                 enhancedWithModel: nil,
                 didAttemptPolish: false,
                 usedFallback: false
+            )
+        }
+
+        let runtimeState = settingsStore.engineRuntimeState
+        guard runtimeState.isReady else {
+            toastService.show(
+                ToastPayload(
+                    message: localEngineUnavailableMessage(for: runtimeState),
+                    style: .error
+                )
+            )
+            return RecordingPolishOutcome(
+                finalText: text,
+                originalText: text,
+                enhancedWithModel: nil,
+                didAttemptPolish: false,
+                usedFallback: true
             )
         }
 
@@ -834,9 +837,10 @@ final class AppCoordinator {
             )
         } catch let error as EngineClientError {
             Log.app.error("Engine polish failed: \(error)")
+            updateEngineRuntimeState(for: error, context: "polish")
             toastService.show(
                 ToastPayload(
-                    message: polishFallbackMessage(for: error),
+                    message: localEngineUnavailableMessage(for: settingsStore.engineRuntimeState),
                     style: .error
                 )
             )
@@ -849,9 +853,12 @@ final class AppCoordinator {
             )
         } catch {
             Log.app.error("Engine polish failed: \(error)")
+            settingsStore.updateEngineRuntimeState(
+                .error(detail: "Engine polish failed: \(error.localizedDescription)")
+            )
             toastService.show(
                 ToastPayload(
-                    message: "Text polishing failed. Transcription inserted without polishing.",
+                    message: localEngineUnavailableMessage(for: settingsStore.engineRuntimeState),
                     style: .error
                 )
             )
@@ -869,42 +876,205 @@ final class AppCoordinator {
         language.whisperLanguageCode ?? language.rawValue
     }
 
-    private func currentEngineConfigRequest() -> ConfigRequest? {
-        guard let llmConfiguration = settingsStore.currentEngineLLMProviderConfiguration() else {
-            return nil
-        }
+    private func currentEngineConfigurationReadiness() -> EngineConfigurationReadiness {
+        let llmConfiguration = settingsStore.currentEngineLLMProviderConfiguration()
+        let sttConfiguration = settingsStore.currentEngineSTTProviderConfiguration()
+        let defaultLanguage = Self.engineDefaultLanguageCode(for: settingsStore.selectedAppLanguage)
 
-        return ConfigRequest(
-            stt: settingsStore.currentEngineSTTProviderConfiguration(),
-            llm: llmConfiguration,
-            defaultLanguage: Self.engineDefaultLanguageCode(for: settingsStore.selectedAppLanguage)
-        )
+        switch settingsStore.sttMode {
+        case .local:
+            guard let llmConfiguration else {
+                return .incomplete(.llm)
+            }
+
+            return .ready(
+                ConfigRequest(
+                    stt: nil,
+                    llm: llmConfiguration,
+                    defaultLanguage: defaultLanguage
+                )
+            )
+        case .remote:
+            switch (sttConfiguration, llmConfiguration) {
+            case let (.some(sttConfiguration), .some(llmConfiguration)):
+                return .ready(
+                    ConfigRequest(
+                        stt: sttConfiguration,
+                        llm: llmConfiguration,
+                        defaultLanguage: defaultLanguage
+                    )
+                )
+            case (.none, .none):
+                return .incomplete(.sttAndLLM)
+            case (.none, .some):
+                return .incomplete(.stt)
+            case (.some, .none):
+                return .incomplete(.llm)
+            }
+        }
     }
 
     private func scheduleEngineConfigurationSync() {
-        engineConfigSyncTask?.cancel()
-        engineConfigSyncTask = Task { @MainActor [weak self] in
+        settingsStore.updateEngineRuntimeState(
+            .checking(detail: "Rechecking Engine after settings changes...")
+        )
+
+        engineRuntimeEvaluationTask?.cancel()
+        engineRuntimeEvaluationTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(350))
             guard let self, !Task.isCancelled else { return }
-            await self.pushCurrentEngineConfigurationIfPossible()
+            await self.evaluateEngineRuntime(trigger: .settingsChange)
         }
     }
 
-    private func pushCurrentEngineConfigurationIfPossible() async {
-        guard let requestBody = currentEngineConfigRequest() else { return }
+    private func requestManualEngineRuntimeRecheck() {
+        engineRuntimeEvaluationTask?.cancel()
+        engineRuntimeEvaluationTask = Task { @MainActor [weak self] in
+            guard let self, !Task.isCancelled else { return }
+            await self.evaluateEngineRuntime(trigger: .manualRecheck)
+        }
+    }
 
+    private func evaluateEngineRuntime(trigger: EngineRuntimeEvaluationTrigger) async {
+        let checkingDetail: String
+        switch trigger {
+        case .startup:
+            checkingDetail = "Checking Engine runtime..."
+        case .settingsChange:
+            checkingDetail = "Rechecking Engine after settings changes..."
+        case .manualRecheck:
+            checkingDetail = "Rechecking Engine runtime..."
+        }
+
+        settingsStore.updateEngineRuntimeState(.checking(detail: checkingDetail))
+
+        let healthResponse: HealthResponse
         do {
-            _ = try await engineStartupHandlers.health()
-            _ = try await engineStartupHandlers.pushConfig(requestBody)
-            Log.boot.info("Engine config synchronized after local settings change")
+            healthResponse = try await engineStartupHandlers.health()
         } catch let error as EngineClientError {
+            updateEngineRuntimeState(for: error, context: "health check")
             if error == .connectionFailed {
-                Log.boot.info("Engine unavailable while applying local config changes; will retry on next successful startup sync")
+                Log.boot.info("Engine unavailable during \(String(describing: trigger)) health check; continuing with degraded runtime")
             } else {
-                Log.boot.warning("Engine config synchronization after settings change failed: \(error.localizedDescription)")
+                Log.boot.warning("Engine health check failed during \(String(describing: trigger)): \(error.localizedDescription)")
             }
+            return
         } catch {
-            Log.boot.warning("Engine config synchronization after settings change failed: \(error.localizedDescription)")
+            let detail = "Engine health check failed: \(error.localizedDescription)"
+            settingsStore.updateEngineRuntimeState(.error(detail: detail))
+            Log.boot.warning(detail)
+            return
+        }
+
+        switch currentEngineConfigurationReadiness() {
+        case .incomplete(let missingConfiguration):
+            settingsStore.updateEngineRuntimeState(
+                .needsConfiguration(
+                    missingConfiguration,
+                    detail: missingConfigurationDetail(for: missingConfiguration)
+                )
+            )
+            return
+        case .ready(let requestBody):
+            settingsStore.updateEngineRuntimeState(.syncing(version: healthResponse.version))
+            do {
+                _ = try await engineStartupHandlers.pushConfig(requestBody)
+                settingsStore.updateEngineRuntimeState(
+                    .ready(
+                        version: healthResponse.version,
+                        detail: readyRuntimeDetail(for: settingsStore.sttMode)
+                    )
+                )
+
+                switch trigger {
+                case .startup:
+                    Log.boot.info("Engine config synchronized on startup")
+                case .settingsChange:
+                    Log.boot.info("Engine config synchronized after local settings change")
+                case .manualRecheck:
+                    Log.boot.info("Engine runtime recheck succeeded")
+                }
+            } catch let error as EngineClientError {
+                updateEngineRuntimeState(
+                    for: error,
+                    context: "configuration sync"
+                )
+                Log.boot.warning("Engine config synchronization failed during \(String(describing: trigger)): \(error.localizedDescription)")
+            } catch {
+                let detail = "Engine configuration sync failed: \(error.localizedDescription)"
+                settingsStore.updateEngineRuntimeState(.error(detail: detail))
+                Log.boot.warning(detail)
+            }
+        }
+    }
+
+    private func readyRuntimeDetail(for mode: STTMode) -> String {
+        switch mode {
+        case .local:
+            return "Engine is ready for local dictation with text polishing."
+        case .remote:
+            return "Engine is ready for remote transcription and text polishing."
+        }
+    }
+
+    private func missingConfigurationDetail(
+        for missingConfiguration: EngineRuntimeState.MissingConfiguration
+    ) -> String {
+        switch (settingsStore.sttMode, missingConfiguration) {
+        case (.local, _):
+            return "Add an LLM provider base URL, model, and API key to enable Engine polish."
+        case (.remote, .llm):
+            return "Add an LLM provider base URL, model, and API key before using remote Engine transcription."
+        case (.remote, .stt):
+            return "Add a Remote STT provider base URL, model, and API key before using Engine transcription."
+        case (.remote, .sttAndLLM):
+            return "Add both Remote STT and LLM provider settings before using Engine transcription."
+        }
+    }
+
+    private func updateEngineRuntimeState(
+        for error: EngineClientError,
+        context: String
+    ) {
+        switch error {
+        case .connectionFailed:
+            settingsStore.updateEngineRuntimeState(
+                .offline(
+                    detail: "Engine is not reachable at \(settingsStore.engineHost):\(settingsStore.enginePort)."
+                )
+            )
+        case .sttNotConfigured:
+            settingsStore.updateEngineRuntimeState(
+                .needsConfiguration(
+                    .stt,
+                    detail: missingConfigurationDetail(for: .stt)
+                )
+            )
+        case .notConfigured:
+            settingsStore.updateEngineRuntimeState(
+                .needsConfiguration(
+                    .llm,
+                    detail: missingConfigurationDetail(for: .llm)
+                )
+            )
+        case .validationError(let message),
+             .llmFailure(let message),
+             .sttFailure(let message):
+            settingsStore.updateEngineRuntimeState(
+                .error(detail: "Engine \(context) failed: \(message)")
+            )
+        case .apiError(_, _, let message):
+            settingsStore.updateEngineRuntimeState(
+                .error(detail: "Engine \(context) failed: \(message)")
+            )
+        case .invalidBaseURL:
+            settingsStore.updateEngineRuntimeState(
+                .error(detail: "Engine host or port is invalid.")
+            )
+        case .invalidResponse:
+            settingsStore.updateEngineRuntimeState(
+                .error(detail: "Engine returned an invalid response during \(context).")
+            )
         }
     }
 
@@ -928,6 +1098,41 @@ final class AppCoordinator {
         default:
             return "Text polishing failed. Transcription inserted without polishing."
         }
+    }
+
+    private func localEngineUnavailableMessage(for runtimeState: EngineRuntimeState) -> String {
+        switch runtimeState.phase {
+        case .offline:
+            return "Engine is offline. Local transcription was inserted without polishing. Start Engine, then press Recheck in Settings."
+        case .needsConfiguration:
+            return "Engine polish is not ready. Local transcription was inserted without polishing. Finish the missing Engine setup, then press Recheck in Settings."
+        case .checking, .syncing:
+            return "Engine is still checking configuration. Local transcription was inserted without polishing."
+        case .error:
+            return "Engine needs attention. Local transcription was inserted without polishing. Fix the Engine setup, then press Recheck in Settings."
+        case .ready:
+            return "Text polishing failed. Transcription inserted without polishing."
+        }
+    }
+
+    private func remoteEngineBlockedMessage(for runtimeState: EngineRuntimeState) -> String {
+        switch runtimeState.phase {
+        case .offline:
+            return "Engine is offline. Start Engine or switch Transcription Mode back to Local in Settings."
+        case .needsConfiguration:
+            return "Remote Engine transcription is not ready. Finish the missing Engine setup or switch Transcription Mode back to Local."
+        case .checking, .syncing:
+            return "Engine is still checking configuration. Try again in a moment or switch Transcription Mode back to Local."
+        case .error:
+            return "Engine needs attention before remote transcription can continue. Fix the Engine setup or switch Transcription Mode back to Local."
+        case .ready:
+            return "Engine transcription is not ready yet."
+        }
+    }
+
+    private func handleTranscriptionRuntimeFailure(_ error: TranscriptionService.TranscriptionError) {
+        guard case .engineRuntimeFailure(let engineError) = error else { return }
+        updateEngineRuntimeState(for: engineError, context: "transcription")
     }
 
     private func seedBuiltInPresetsIfNeeded() {
@@ -1448,10 +1653,12 @@ final class AppCoordinator {
                     modifiers: settingsStore.quickCaptureToggleHotkeyModifiers
                 )
             ),
-            engine: currentEngineObservationSnapshot()
+            engine: currentEngineObservationSnapshot(),
+            engineRuntimeRecheckSequence: settingsStore.engineRuntimeRecheckSequence
         )
     }
     private func observeSettings() {
+        lastObservedSettingsSnapshot = currentSettingsObservationSnapshot()
         settingsStore.objectWillChange
             .sink { [weak self] _ in
                 Task { @MainActor in
@@ -1501,7 +1708,9 @@ final class AppCoordinator {
                         self.pillFloatingIndicatorController.reloadLocalizedStrings()
                     }
 
-                    if previousSnapshot.engine != snapshot.engine {
+                    if previousSnapshot.engineRuntimeRecheckSequence != snapshot.engineRuntimeRecheckSequence {
+                        self.requestManualEngineRuntimeRecheck()
+                    } else if previousSnapshot.engine != snapshot.engine {
                         self.scheduleEngineConfigurationSync()
                     }
 
@@ -2713,10 +2922,14 @@ final class AppCoordinator {
             Log.app.error("Transcription failed: \(error)")
             resetProcessingState()
             didResetProcessingState = true
-            let message = if case .modelNotLoaded = error {
-                "No model loaded. Please download a model in Settings."
-            } else {
-                "Transcription failed: \(error.localizedDescription)"
+            let message: String
+            switch error {
+            case .modelNotLoaded:
+                message = "No model loaded. Please download a model in Settings."
+            case .engineRuntimeFailure:
+                message = remoteEngineBlockedMessage(for: settingsStore.engineRuntimeState)
+            default:
+                message = "Transcription failed: \(error.localizedDescription)"
             }
             toastService.show(
                 ToastPayload(message: message, style: .error)
@@ -2739,6 +2952,16 @@ final class AppCoordinator {
             handleNoSpeechDetected(context: "recording")
             return
         }
+
+        if settingsStore.sttMode == .remote, !settingsStore.engineRuntimeState.isReady {
+            toastService.show(
+                ToastPayload(
+                    message: remoteEngineBlockedMessage(for: settingsStore.engineRuntimeState),
+                    style: .error
+                )
+            )
+            return
+        }
         
         let diarizationEnabled = Self.shouldUseSpeakerDiarization(
             diarizationFeatureEnabled: settingsStore.diarizationFeatureEnabled,
@@ -2746,11 +2969,19 @@ final class AppCoordinator {
         )
         Log.app.info("Speaker diarization \(diarizationEnabled ? "enabled" : "disabled") for batch transcription")
 
-        let transcriptionOutput = try await transcriptionService.transcribe(
-            audioData: audioData,
-            diarizationEnabled: diarizationEnabled,
-            options: TranscriptionOptions(language: settingsStore.selectedAppLanguage)
-        )
+        let transcriptionOutput: TranscriptionOutput
+        do {
+            transcriptionOutput = try await transcriptionService.transcribe(
+                audioData: audioData,
+                diarizationEnabled: diarizationEnabled,
+                options: TranscriptionOptions(language: settingsStore.selectedAppLanguage)
+            )
+        } catch let error as TranscriptionService.TranscriptionError {
+            handleTranscriptionRuntimeFailure(error)
+            throw error
+        } catch {
+            throw error
+        }
 
         if diarizationEnabled {
             let segmentCount = transcriptionOutput.diarizedSegments?.count ?? 0
@@ -3945,8 +4176,8 @@ final class AppCoordinator {
     func cleanup() {
         floatingIndicatorHiddenTask?.cancel()
         floatingIndicatorHiddenTask = nil
-        engineConfigSyncTask?.cancel()
-        engineConfigSyncTask = nil
+        engineRuntimeEvaluationTask?.cancel()
+        engineRuntimeEvaluationTask = nil
         teardownEscapeKeyMonitor()
         teardownModifierKeyMonitor()
         removeEscapeGlobalMonitorFallbackIfNeeded()
