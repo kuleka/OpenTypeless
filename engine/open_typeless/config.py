@@ -18,6 +18,10 @@ def is_configured() -> bool:
     return _config is not None
 
 
+def is_stt_configured() -> bool:
+    return _config is not None and _config.stt is not None
+
+
 def mask_api_key(key: str) -> str:
     """Mask API key: preserve prefix + **** + last 4 chars.
 
@@ -48,13 +52,17 @@ def get_masked_config() -> ConfigResponse:
     if _config is None:
         return ConfigResponse(configured=False)
 
-    return ConfigResponse(
-        configured=True,
-        stt=MaskedSTTConfig(
+    masked_stt = None
+    if _config.stt is not None:
+        masked_stt = MaskedSTTConfig(
             api_base=_config.stt.api_base,
             api_key=mask_api_key(_config.stt.api_key),
             model=_config.stt.model,
-        ),
+        )
+
+    return ConfigResponse(
+        configured=True,
+        stt=masked_stt,
         llm=MaskedLLMConfig(
             api_base=_config.llm.api_base,
             api_key=mask_api_key(_config.llm.api_key),

@@ -48,6 +48,21 @@ async def test_transcribe_not_configured() -> None:
 
 
 @pytest.mark.asyncio
+async def test_transcribe_stt_not_in_config() -> None:
+    """Config exists but stt is None (LLM-only mode)."""
+    llm_only = ConfigRequest(
+        llm=LLMConfig(
+            api_base="https://api.test.com/v1",
+            api_key="test-key",
+            model="test-model",
+        ),
+    )
+    set_config(llm_only)
+    with pytest.raises(STTError, match="not configured"):
+        await transcribe(b"fake-audio-bytes")
+
+
+@pytest.mark.asyncio
 async def test_transcribe_api_error(monkeypatch) -> None:
     set_config(_test_config)
 

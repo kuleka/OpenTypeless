@@ -15,8 +15,8 @@ async def transcribe(audio_bytes: bytes, language: str = "auto") -> str:
     Calls {stt.api_base}/audio/transcriptions with multipart form data.
     """
     config = get_config()
-    if config is None:
-        raise STTError("STT is not configured. Call POST /config first.")
+    if config is None or config.stt is None:
+        raise STTError("STT is not configured. Call POST /config with stt settings first, or use local STT on the client.")
 
     stt = config.stt
     url = f"{stt.api_base.rstrip('/')}/audio/transcriptions"

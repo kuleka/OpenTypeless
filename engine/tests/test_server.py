@@ -59,9 +59,10 @@ def test_post_config_with_default_language() -> None:
     assert resp.status_code == 200
 
 
-def test_post_config_missing_stt() -> None:
+def test_post_config_llm_only() -> None:
     resp = client.post("/config", json={"llm": _valid_config["llm"]})
-    assert resp.status_code == 422
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "configured"
 
 
 # ── GET /config ────────────────────────────────────────
@@ -166,6 +167,66 @@ def test_polish_translate_missing_output_language() -> None:
     assert "output_language" in resp.json()["error"]["message"]
 
 
+@patch("open_typeless.server.transcribe", new_callable=AsyncMock)
+@patch("open_typeless.server.polish", new_callable=AsyncMock)
+def test_polish_text_mode(mock_polish, mock_transcribe) -> None:
+    mock_polish.return_value = "Hello, world!"
+
+    client.post("/config", json=_valid_config)
+    resp = client.post(
+        "/polish",
+        json={
+            "text": "hello world",
+            "context": {"app_id": "com.apple.mail", "window_title": "Compose"},
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["text"] == "Hello, world!"
+    assert data["raw_transcript"] == "hello world"
+    assert data["stt_ms"] == 0
+    assert data["context_detected"] == "email"
+    mock_transcribe.assert_not_called()
+
+
+@patch("open_typeless.server.transcribe", new_callable=AsyncMock)
+@patch("open_typeless.server.polish", new_callable=AsyncMock)
+def test_polish_text_mode_llm_only_config(mock_polish, mock_transcribe) -> None:
+    """Text mode works even without STT configured."""
+    mock_polish.return_value = "Polished text"
+
+    client.post("/config", json={"llm": _valid_config["llm"]})
+    resp = client.post("/polish", json={"text": "some transcript"})
+    assert resp.status_code == 200
+    assert resp.json()["text"] == "Polished text"
+    mock_transcribe.assert_not_called()
+
+
+def test_polish_neither_text_nor_audio() -> None:
+    client.post("/config", json=_valid_config)
+    resp = client.post("/polish", json={"context": {"app_id": "com.apple.mail"}})
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert "Either text or audio_base64" in resp.json()["error"]["message"]
+
+
+def test_polish_both_text_and_audio() -> None:
+    client.post("/config", json=_valid_config)
+    resp = client.post(
+        "/polish", json={"text": "hello", "audio_base64": _valid_audio}
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert "mutually exclusive" in resp.json()["error"]["message"]
+
+
+def test_polish_audio_without_stt_config() -> None:
+    client.post("/config", json={"llm": _valid_config["llm"]})
+    resp = client.post("/polish", json={"audio_base64": _valid_audio})
+    assert resp.status_code == 503
+    assert resp.json()["error"]["code"] == "STT_NOT_CONFIGURED"
+
+
 from open_typeless.stt import STTError
 
 
@@ -223,3 +284,59 @@ def test_post_contexts() -> None:
     assert resp.status_code == 200
     assert resp.json()["status"] == "updated"
     assert resp.json()["scene"] == "email"
+
+
+# ── POST /transcribe ──────────────────────────────────
+
+
+@patch("open_typeless.server.transcribe", new_callable=AsyncMock)
+def test_transcribe_success(mock_transcribe) -> None:
+    mock_transcribe.return_value = "hello world"
+
+    client.post("/config", json=_valid_config)
+    resp = client.post(
+        "/transcribe",
+        files={"file": ("audio.wav", b"fake-wav-data", "audio/wav")},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["text"] == "hello world"
+    assert "stt_ms" in data
+
+
+@patch("open_typeless.server.transcribe", new_callable=AsyncMock)
+def test_transcribe_with_language(mock_transcribe) -> None:
+    mock_transcribe.return_value = "你好"
+
+    client.post("/config", json=_valid_config)
+    resp = client.post(
+        "/transcribe",
+        files={"file": ("audio.wav", b"fake-wav-data", "audio/wav")},
+        data={"language": "zh"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["text"] == "你好"
+    mock_transcribe.assert_called_once_with(b"fake-wav-data", language="zh")
+
+
+def test_transcribe_stt_not_configured() -> None:
+    client.post("/config", json={"llm": _valid_config["llm"]})
+    resp = client.post(
+        "/transcribe",
+        files={"file": ("audio.wav", b"fake-wav-data", "audio/wav")},
+    )
+    assert resp.status_code == 503
+    assert resp.json()["error"]["code"] == "STT_NOT_CONFIGURED"
+
+
+@patch("open_typeless.server.transcribe", new_callable=AsyncMock)
+def test_transcribe_stt_failure(mock_transcribe) -> None:
+    mock_transcribe.side_effect = STTError("STT API failed")
+
+    client.post("/config", json=_valid_config)
+    resp = client.post(
+        "/transcribe",
+        files={"file": ("audio.wav", b"fake-wav-data", "audio/wav")},
+    )
+    assert resp.status_code == 502
+    assert resp.json()["error"]["code"] == "STT_FAILURE"

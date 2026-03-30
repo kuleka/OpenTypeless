@@ -4,6 +4,7 @@ from open_typeless.config import (
     get_config,
     get_masked_config,
     is_configured,
+    is_stt_configured,
     mask_api_key,
     set_config,
 )
@@ -87,3 +88,51 @@ def test_masked_config_configured(monkeypatch) -> None:
     assert result.default_language == "auto"
     # Original key should not appear
     assert "test1234abcd" not in result.stt.api_key
+
+
+# ── LLM-only config (no STT) ────────────────────────
+
+_llm_only_config = ConfigRequest(
+    llm=LLMConfig(
+        api_base="https://openrouter.ai/api/v1",
+        api_key="sk-or-test5678efgh",
+        model="minimax/minimax-m2.7",
+    ),
+    default_language="auto",
+)
+
+
+def test_is_stt_configured_with_full_config(monkeypatch) -> None:
+    import open_typeless.config as cfg
+
+    monkeypatch.setattr(cfg, "_config", None)
+    set_config(_test_config)
+    assert is_stt_configured() is True
+
+
+def test_is_stt_configured_without_stt(monkeypatch) -> None:
+    import open_typeless.config as cfg
+
+    monkeypatch.setattr(cfg, "_config", None)
+    set_config(_llm_only_config)
+    assert is_configured() is True
+    assert is_stt_configured() is False
+
+
+def test_is_stt_configured_no_config(monkeypatch) -> None:
+    import open_typeless.config as cfg
+
+    monkeypatch.setattr(cfg, "_config", None)
+    assert is_stt_configured() is False
+
+
+def test_masked_config_without_stt(monkeypatch) -> None:
+    import open_typeless.config as cfg
+
+    monkeypatch.setattr(cfg, "_config", None)
+    set_config(_llm_only_config)
+    result = get_masked_config()
+    assert result.configured is True
+    assert result.stt is None
+    assert result.llm is not None
+    assert "****" in result.llm.api_key

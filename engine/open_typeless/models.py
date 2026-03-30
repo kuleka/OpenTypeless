@@ -39,7 +39,7 @@ class LLMConfig(BaseModel):
 
 
 class ConfigRequest(BaseModel):
-    stt: STTConfig
+    stt: Optional[STTConfig] = None
     llm: LLMConfig
     default_language: str = "auto"
 
@@ -79,7 +79,8 @@ class PolishOptions(BaseModel):
 
 
 class PolishRequest(BaseModel):
-    audio_base64: str
+    text: Optional[str] = None
+    audio_base64: Optional[str] = None
     audio_format: str = "wav"
     context: AppContext = AppContext()
     options: PolishOptions = PolishOptions()
@@ -94,6 +95,16 @@ class PolishResponse(BaseModel):
     stt_ms: int
     llm_ms: int
     total_ms: int
+
+
+# ── Transcribe ────────────────────────────────────────
+
+
+class TranscribeResponse(BaseModel):
+    text: str
+    language_detected: str
+    duration_ms: int
+    stt_ms: int
 
 
 # ── Health ─────────────────────────────────────────────
