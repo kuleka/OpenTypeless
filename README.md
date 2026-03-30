@@ -11,19 +11,24 @@ OpenTypeless is currently being built as:
 - a Python Engine that exposes localhost HTTP APIs
 - a macOS client based on the Pindrop codebase
 
-The macOS migration is in progress. The current Phase 1 implementation already includes:
+The macOS client Phase 1 integration is complete. The current implementation includes:
 
 - `EngineClient` for `/health`, `/config`, `/transcribe`, `/polish`
 - dual-mode transcription plumbing: local STT or remote Engine STT
 - `PolishService` for Engine-based text polishing
+- `AppCoordinator` wiring for the main dictation flow
+- Engine settings UI and config sync
+- app-level tests plus UI smoke coverage
 
-The full app pipeline and settings UI are still being wired in.
+Some legacy auxiliary flows from the original app still exist, but the main dictation pipeline now runs through the `Client + Engine` split.
 
 Useful references:
 
 - [Engine ↔ Client API contract](docs/api-contract.md)
-- [macOS client Phase 1 status](docs/macos-client-phase1.md)
+- [macOS client Phase 1 summary](docs/macos-client-phase1.md)
 - [macOS client README](clients/macos/README.md)
+- [Current OpenSpec specs](openspec/specs)
+- [Archived Phase 1 change](openspec/changes/archive/2026-03-30-phase1-macos-client)
 
 ## How It Works
 
@@ -69,9 +74,9 @@ OpenTypeless detects which app you're using and adjusts its output:
 
 🚧 **Under active development**
 
-- [ ] Phase 1: Core Engine and client integration end-to-end
-- [ ] Phase 2: macOS settings and startup wiring
-- [ ] Phase 3: enhancements and broader UX polish
+- [x] Phase 1: macOS client and Engine integration foundation
+- [ ] Follow-up cleanup for remaining legacy client flows
+- [ ] Broader UX polish and release hardening
 
 ## License
 

@@ -16,23 +16,25 @@ Useful references:
 
 - [OpenTypeless root README](../../README.md)
 - [Engine ↔ Client API contract](../../docs/api-contract.md)
-- [macOS client Phase 1 status](../../docs/macos-client-phase1.md)
+- [macOS client Phase 1 summary](../../docs/macos-client-phase1.md)
 - [Contribution guide](./CONTRIBUTING.md)
 
 ## Current Status
 
-As of the current Phase 1 migration:
+As of the completed Phase 1 migration:
 
 - local transcription remains available
-- remote STT exists at the service layer
-- Engine-based polish exists at the service layer
-- full `AppCoordinator` wiring and Engine settings UI are still in progress
+- remote STT is wired into the main dictation flow
+- Engine-based polish is wired into the main dictation flow
+- `AppCoordinator` startup sync and output pipeline are connected
+- Engine settings UI and config persistence are implemented
+- UI smoke tests cover the settings fixture surfaces
 
-That means the core Engine integration pieces exist, but not every end-user flow has been migrated yet.
+The primary dictation path is now running through the `Client + Engine` split. A few auxiliary legacy flows still remain.
 
 ## Current Architecture
 
-The current Phase 1 target pipeline is:
+The current main dictation pipeline is:
 
 ```text
 record audio
@@ -53,7 +55,7 @@ Important components already in the repo:
 
 Important migration note:
 
-- `AIEnhancementService` still exists because some higher-level app flows have not been migrated yet.
+- `AIEnhancementService` still exists because a few auxiliary legacy app flows have not been migrated yet.
 - Xcode targets and many path names still use `Pindrop` for continuity.
 
 ## Requirements
@@ -111,6 +113,25 @@ xcodebuild test \
 
 This is the most reliable full-app test command for the current local setup.
 
+UI smoke tests:
+
+```bash
+cd clients/macos
+xcodebuild test \
+  -project Pindrop.xcodeproj \
+  -scheme Pindrop \
+  -testPlan UI \
+  -destination 'platform=macOS' \
+  -derivedDataPath /tmp/OpenTypelessUISignedDerivedData \
+  -clonedSourcePackagesDirPath /tmp/OpenTypelessSourcePackages \
+  CODE_SIGN_IDENTITY=- \
+  AD_HOC_CODE_SIGNING_ALLOWED=YES \
+  CODE_SIGNING_ALLOWED=YES \
+  CODE_SIGNING_REQUIRED=YES \
+  CODE_SIGN_STYLE=Manual \
+  DEVELOPMENT_TEAM=''
+```
+
 ## Build System
 
 This directory includes a `justfile` for common developer tasks:
@@ -138,7 +159,7 @@ just release-notes 1.9.0
 just release 1.9.0
 ```
 
-Treat these as maintainer workflows, not as evidence that upstream Pindrop releases are OpenTypeless releases.
+Treat these as OpenTypeless maintainer workflows for inherited packaging infrastructure, not as evidence that upstream Pindrop releases are current OpenTypeless releases.
 
 ## First Launch Notes
 
@@ -149,7 +170,7 @@ On a fresh local build, expect to:
 3. download or prepare local models if using local STT
 4. use the menu bar app and hotkeys for recording
 
-Some Engine-backed flows are still in progress, so local-first behavior is still present in parts of the app.
+The main dictation path is Engine-backed now. A few legacy auxiliary flows still remain and are being cleaned up separately.
 
 ## Repository Layout
 

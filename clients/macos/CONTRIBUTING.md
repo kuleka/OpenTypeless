@@ -2,15 +2,15 @@
 
 Thank you for your interest in contributing to the OpenTypeless macOS client. Whether you're fixing a bug, adding a feature, or improving documentation, your help is welcome and appreciated.
 
-This client is a macOS menu bar dictation app built with Swift and SwiftUI. It still contains the original Pindrop foundation, but it is being adapted into the OpenTypeless macOS client. The repo currently uses pinned Swift package dependencies including WhisperKit, FluidAudio, and Sparkle.
+This client is a macOS menu bar dictation app built with Swift and SwiftUI. It still contains the original Pindrop foundation, but the main dictation flow now runs as the OpenTypeless macOS client. The repo currently uses pinned Swift package dependencies including WhisperKit, FluidAudio, and Sparkle.
 
-This repository is also the current OpenTypeless macOS client. The codebase is mid-migration from the original Pindrop architecture toward an `OpenTypeless Client + Engine` split.
+This repository is also the current OpenTypeless macOS client. Phase 1 of the `OpenTypeless Client + Engine` split is complete, while a few auxiliary legacy flows remain in the codebase.
 
 Useful references before making changes:
 
 - [OpenTypeless root README](../../README.md)
 - [Engine ↔ Client API contract](../../docs/api-contract.md)
-- [macOS client Phase 1 status](../../docs/macos-client-phase1.md)
+- [macOS client Phase 1 summary](../../docs/macos-client-phase1.md)
 
 ## Table of Contents
 
@@ -75,11 +75,11 @@ For the full build system reference (release builds, DMGs, code signing, notariz
 
 When working in this repo, assume three layers are currently coexisting:
 
-- original local Pindrop transcription and enhancement flows
-- new Engine HTTP integration pieces such as `EngineClient`, `EngineTranscriptionEngine`, and `PolishService`
-- partially migrated app orchestration still being moved over in phases
+- original local Pindrop-era transcription and enhancement components
+- the new Engine HTTP integration pieces such as `EngineClient`, `EngineTranscriptionEngine`, and `PolishService`
+- a mostly migrated app orchestration layer with a few remaining legacy auxiliary paths
 
-Do not assume that a new service is already wired into every app flow.
+The main dictation flow is migrated. Do not assume every auxiliary flow has been migrated.
 
 ### Branch Naming
 
@@ -341,9 +341,11 @@ All business logic lives in `Services/`. Each service is a single-responsibility
 AppCoordinator.handleToggleRecording()
     → AudioRecorder (capture audio)
     → TranscriptionService (local or remote STT)
-    → PolishService or legacy enhancement flow, depending on migration state
+    → PolishService for the main dictation flow
     → OutputManager (clipboard / direct insert)
 ```
+
+Some auxiliary paths such as quick capture note still retain legacy behavior and should be treated separately from the main dictation pipeline.
 
 ### Adding New Views
 
