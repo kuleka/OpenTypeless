@@ -22,7 +22,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .general: return localized("General", locale: locale)
         case .theme: return localized("Theme", locale: locale)
         case .hotkeys: return localized("Hotkeys", locale: locale)
-        case .ai: return localized("AI Enhancement", locale: locale)
+        case .ai: return localized("Engine & AI", locale: locale)
         case .update: return localized("Update", locale: locale)
         case .about: return localized("About", locale: locale)
         }
@@ -52,7 +52,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .hotkeys:
             return localized("Configure keyboard shortcuts for recording and note capture", locale: locale)
         case .ai:
-            return localized("Providers, prompts, and vibe mode controls", locale: locale)
+            return localized("Engine connection, STT mode, provider credentials, prompts, and vibe mode", locale: locale)
         case .update:
             return localized("Automatic updates and manual update checks", locale: locale)
         case .about:
@@ -80,8 +80,9 @@ enum SettingsTab: String, CaseIterable, Identifiable {
             ]
         case .ai:
             return [
-                "provider", "api key", "endpoint", "prompt", "preset", "vibe mode",
-                "clipboard context", "ui context", "model", "enhancement"
+                "engine", "stt", "llm", "provider", "api key", "endpoint", "host",
+                "port", "prompt", "preset", "vibe mode", "clipboard context",
+                "ui context", "model", "enhancement", "polish", "remote"
             ]
         case .update:
             return ["updates", "automatic updates", "check now", "version"]
@@ -303,6 +304,7 @@ struct SettingsContainerView: View {
                 Text(localized("No settings found", locale: locale))
                     .font(AppTypography.title)
                     .foregroundStyle(AppColors.textPrimary)
+                    .accessibilityIdentifier("settings.search.emptyState.title")
 
                 Text(localized("Try searching for terms like hotkeys, microphone, updates, or vibe mode.", locale: locale))
                     .font(AppTypography.body)
@@ -312,6 +314,7 @@ struct SettingsContainerView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(AppTheme.Spacing.xxl)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("settings.search.emptyState")
     }
 }

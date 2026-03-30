@@ -1,10 +1,12 @@
-# Releasing Pindrop
+# Releasing the OpenTypeless macOS Client
 
-This document describes the release process for Pindrop, including code signing and update distribution via Sparkle.
+This document describes the inherited Sparkle-based release process for the OpenTypeless macOS client.
+
+The Xcode target, app bundle, and some distribution artifacts are still named `Pindrop`. Treat those names as current implementation details inside this repo.
 
 ## EdDSA Signing Keys
 
-Pindrop uses [Sparkle](https://sparkle-project.org/) for automatic updates. Updates are signed using EdDSA (Ed25519) for security.
+The current macOS client target uses [Sparkle](https://sparkle-project.org/) for automatic updates. Updates are signed using EdDSA (Ed25519) for security.
 
 ### Key Storage
 
@@ -19,7 +21,7 @@ Pindrop uses [Sparkle](https://sparkle-project.org/) for automatic updates. Upda
 TCU0MwULuIK6y0ubIossVr+61PGh/wHZfFrRFc9F2Is=
 ```
 
-This key is already configured in `Pindrop/Info.plist`:
+This key is currently configured in `Pindrop/Info.plist`:
 
 ```xml
 <key>SUPublicEDKey</key>

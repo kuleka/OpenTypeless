@@ -1,6 +1,8 @@
 # Build Scripts
 
-This directory contains scripts for building and packaging Pindrop.
+This directory contains scripts for building and packaging the OpenTypeless macOS client.
+
+Some scripts and artifact names still use `Pindrop` because the current Xcode target and packaging flow have not been renamed yet.
 
 ## Scripts
 

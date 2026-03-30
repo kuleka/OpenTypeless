@@ -98,6 +98,139 @@ public enum AppLanguage: String, CaseIterable, Sendable, Identifiable {
 
 }
 
+enum STTMode: String, CaseIterable, Sendable, Identifiable {
+   case local
+   case remote
+
+   var id: String { rawValue }
+}
+
+enum EngineSTTProviderPreset: String, CaseIterable, Sendable, Identifiable {
+   case groq
+   case openAI = "openai"
+   case deepgram
+   case custom
+
+   var id: String { rawValue }
+
+   var displayName: String {
+      switch self {
+      case .groq:
+         return "Groq"
+      case .openAI:
+         return "OpenAI"
+      case .deepgram:
+         return "Deepgram"
+      case .custom:
+         return "Custom"
+      }
+   }
+
+   var defaultAPIBase: String {
+      switch self {
+      case .groq:
+         return "https://api.groq.com/openai/v1"
+      case .openAI:
+         return "https://api.openai.com/v1"
+      case .deepgram:
+         return "https://api.deepgram.com/v1"
+      case .custom:
+         return ""
+      }
+   }
+
+   var defaultModel: String {
+      switch self {
+      case .groq:
+         return "whisper-large-v3"
+      case .openAI:
+         return "whisper-1"
+      case .deepgram:
+         return "nova-2"
+      case .custom:
+         return ""
+      }
+   }
+
+   var apiKeyPlaceholder: String {
+      switch self {
+      case .groq:
+         return "gsk_..."
+      case .openAI:
+         return "sk-..."
+      case .deepgram:
+         return "dg_..."
+      case .custom:
+         return "Enter STT API key"
+      }
+   }
+}
+
+enum EngineLLMProviderPreset: String, CaseIterable, Sendable, Identifiable {
+   case openRouter = "openrouter"
+   case openAI = "openai"
+   case ollama
+   case custom
+
+   var id: String { rawValue }
+
+   var displayName: String {
+      switch self {
+      case .openRouter:
+         return "OpenRouter"
+      case .openAI:
+         return "OpenAI"
+      case .ollama:
+         return "Ollama"
+      case .custom:
+         return "Custom"
+      }
+   }
+
+   var defaultAPIBase: String {
+      switch self {
+      case .openRouter:
+         return "https://openrouter.ai/api/v1"
+      case .openAI:
+         return "https://api.openai.com/v1"
+      case .ollama:
+         return "http://localhost:11434/v1"
+      case .custom:
+         return ""
+      }
+   }
+
+   var defaultModel: String {
+      switch self {
+      case .openRouter:
+         return "openai/gpt-4o-mini"
+      case .openAI:
+         return "gpt-4o-mini"
+      case .ollama:
+         return "llama3.2"
+      case .custom:
+         return ""
+      }
+   }
+
+   var apiKeyPlaceholder: String {
+      switch self {
+      case .openRouter:
+         return "sk-or-..."
+      case .openAI:
+         return "sk-..."
+      case .ollama:
+         return "Optional for local Ollama"
+      case .custom:
+         return "Enter LLM API key"
+      }
+   }
+
+   var requiresAPIKey: Bool {
+      self != .ollama
+   }
+}
+
 @MainActor
 final class SettingsStore: ObservableObject {
 
@@ -118,6 +251,15 @@ final class SettingsStore: ObservableObject {
 
    enum Defaults {
       static let selectedModel = "openai_whisper-base"
+      static let sttMode = STTMode.local.rawValue
+      static let engineHost = EngineClient.defaultHost
+      static let enginePort = EngineClient.defaultPort
+      static let engineSTTProvider = EngineSTTProviderPreset.groq.rawValue
+      static let engineSTTAPIBase = EngineSTTProviderPreset.groq.defaultAPIBase
+      static let engineSTTModel = EngineSTTProviderPreset.groq.defaultModel
+      static let engineLLMProvider = EngineLLMProviderPreset.openRouter.rawValue
+      static let engineLLMAPIBase = EngineLLMProviderPreset.openRouter.defaultAPIBase
+      static let engineLLMModel = EngineLLMProviderPreset.openRouter.defaultModel
        static let outputMode = "clipboard"
        static let selectedLanguage = AppLanguage.automatic.rawValue
        static let themeMode = PindropThemeMode.system.rawValue
@@ -225,6 +367,24 @@ final class SettingsStore: ObservableObject {
    var automaticDictionaryLearningEnabled: Bool = Defaults.automaticDictionaryLearningEnabled
    @AppStorage("selectedInputDeviceUID", store: SettingsStoreRuntime.appStorageStore)
    var selectedInputDeviceUID: String = Defaults.selectedInputDeviceUID
+   @AppStorage("sttMode", store: SettingsStoreRuntime.appStorageStore)
+   private var sttModeStorage: String = Defaults.sttMode
+   @AppStorage("engineHost", store: SettingsStoreRuntime.appStorageStore)
+   private var engineHostStorage: String = Defaults.engineHost
+   @AppStorage("enginePort", store: SettingsStoreRuntime.appStorageStore)
+   private var enginePortStorage: Int = Defaults.enginePort
+   @AppStorage("engineSTTProvider", store: SettingsStoreRuntime.appStorageStore)
+   private var engineSTTProviderStorage: String = Defaults.engineSTTProvider
+   @AppStorage("engineSTTAPIBase", store: SettingsStoreRuntime.appStorageStore)
+   var engineSTTAPIBase: String = Defaults.engineSTTAPIBase
+   @AppStorage("engineSTTModel", store: SettingsStoreRuntime.appStorageStore)
+   var engineSTTModel: String = Defaults.engineSTTModel
+   @AppStorage("engineLLMProvider", store: SettingsStoreRuntime.appStorageStore)
+   private var engineLLMProviderStorage: String = Defaults.engineLLMProvider
+   @AppStorage("engineLLMAPIBase", store: SettingsStoreRuntime.appStorageStore)
+   var engineLLMAPIBase: String = Defaults.engineLLMAPIBase
+   @AppStorage("engineLLMModel", store: SettingsStoreRuntime.appStorageStore)
+   var engineLLMModel: String = Defaults.engineLLMModel
    @AppStorage("aiEnhancementEnabled", store: SettingsStoreRuntime.appStorageStore)
    var aiEnhancementEnabled: Bool = false
    @AppStorage("aiProvider", store: SettingsStoreRuntime.appStorageStore)
@@ -290,6 +450,8 @@ final class SettingsStore: ObservableObject {
    var hasCompletedOnboarding: Bool = false
    @AppStorage("currentOnboardingStep", store: SettingsStoreRuntime.appStorageStore)
    var currentOnboardingStep: Int = 0
+   @AppStorage("engineSettingsMigratedFromLegacyAI", store: SettingsStoreRuntime.appStorageStore)
+   private var engineSettingsMigratedFromLegacyAI: Bool = false
 
    // MARK: - Keychain Properties
 
@@ -301,6 +463,13 @@ final class SettingsStore: ObservableObject {
    }
 
    private let legacyAPIKeyAccount = "api-key"
+   private func engineSTTAPIKeyAccount(for preset: EngineSTTProviderPreset) -> String {
+      "engine-stt-api-key-\(preset.rawValue)"
+   }
+
+   private func engineLLMAPIKeyAccount(for preset: EngineLLMProviderPreset) -> String {
+      "engine-llm-api-key-\(preset.rawValue)"
+   }
 
    private static var inMemoryKeychainStorage: [String: String] = [:]
 
@@ -358,6 +527,42 @@ final class SettingsStore: ObservableObject {
        get { PindropThemeMode(rawValue: themeMode) ?? .system }
        set { themeMode = newValue.rawValue }
     }
+
+    var sttMode: STTMode {
+       get { STTMode(rawValue: sttModeStorage) ?? .local }
+       set { sttModeStorage = newValue.rawValue }
+    }
+
+   var engineHost: String {
+      get {
+         let trimmed = engineHostStorage.trimmingCharacters(in: .whitespacesAndNewlines)
+         return trimmed.isEmpty ? Defaults.engineHost : trimmed
+      }
+      set {
+         let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+         engineHostStorage = trimmed.isEmpty ? Defaults.engineHost : trimmed
+      }
+   }
+
+   var enginePort: Int {
+      get {
+         let port = enginePortStorage
+         return (1...65_535).contains(port) ? port : Defaults.enginePort
+      }
+      set {
+         enginePortStorage = (1...65_535).contains(newValue) ? newValue : Defaults.enginePort
+      }
+   }
+
+   var selectedEngineSTTProvider: EngineSTTProviderPreset {
+      get { EngineSTTProviderPreset(rawValue: engineSTTProviderStorage) ?? .groq }
+      set { engineSTTProviderStorage = newValue.rawValue }
+   }
+
+   var selectedEngineLLMProvider: EngineLLMProviderPreset {
+      get { EngineLLMProviderPreset(rawValue: engineLLMProviderStorage) ?? .openRouter }
+      set { engineLLMProviderStorage = newValue.rawValue }
+   }
 
     var selectedAppLanguage: AppLanguage {
        get { AppLanguage(rawValue: selectedLanguage) ?? .automatic }
@@ -447,6 +652,7 @@ final class SettingsStore: ObservableObject {
        if let customProvider = inferredCustomLocalProvider(for: apiEndpoint), currentAIProvider == .custom {
           customLocalProviderType = customProvider.rawValue
        }
+       migrateLegacyEngineLLMSettingsIfNeeded()
     }
 
    // MARK: - Keychain Methods
@@ -676,6 +882,99 @@ final class SettingsStore: ObservableObject {
       configuredAPIKey(for: currentAIProvider)
    }
 
+   func saveEngineSTTAPIKey(
+      _ key: String,
+      for preset: EngineSTTProviderPreset? = nil
+   ) throws {
+      let resolvedPreset = preset ?? selectedEngineSTTProvider
+      let account = engineSTTAPIKeyAccount(for: resolvedPreset)
+      try saveEngineAPIKey(key, account: account)
+      objectWillChange.send()
+   }
+
+   func loadEngineSTTAPIKey(
+      for preset: EngineSTTProviderPreset? = nil
+   ) -> String? {
+      let resolvedPreset = preset ?? selectedEngineSTTProvider
+      return loadEngineAPIKey(account: engineSTTAPIKeyAccount(for: resolvedPreset))
+   }
+
+   func configuredEngineSTTAPIKey(
+      for preset: EngineSTTProviderPreset? = nil
+   ) -> String? {
+      normalizedAPIKey(loadEngineSTTAPIKey(for: preset))
+   }
+
+   func saveEngineLLMAPIKey(
+      _ key: String,
+      for preset: EngineLLMProviderPreset? = nil
+   ) throws {
+      let resolvedPreset = preset ?? selectedEngineLLMProvider
+      let account = engineLLMAPIKeyAccount(for: resolvedPreset)
+      try saveEngineAPIKey(key, account: account)
+      objectWillChange.send()
+   }
+
+   func loadEngineLLMAPIKey(
+      for preset: EngineLLMProviderPreset? = nil
+   ) -> String? {
+      let resolvedPreset = preset ?? selectedEngineLLMProvider
+      return loadEngineAPIKey(account: engineLLMAPIKeyAccount(for: resolvedPreset))
+   }
+
+   func configuredEngineLLMAPIKey(
+      for preset: EngineLLMProviderPreset? = nil
+   ) -> String? {
+      normalizedAPIKey(loadEngineLLMAPIKey(for: preset))
+   }
+
+   func currentEngineSTTProviderConfiguration() -> ProviderConfiguration? {
+      let apiBase = engineSTTAPIBase.trimmingCharacters(in: .whitespacesAndNewlines)
+      let model = engineSTTModel.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !apiBase.isEmpty,
+         !model.isEmpty,
+         let apiKey = configuredEngineSTTAPIKey(),
+         !apiKey.isEmpty
+      else {
+         return nil
+      }
+
+      return ProviderConfiguration(
+         apiBase: apiBase,
+         apiKey: apiKey,
+         model: model
+      )
+   }
+
+   func currentEngineLLMProviderConfiguration() -> ProviderConfiguration? {
+      let apiBase = engineLLMAPIBase.trimmingCharacters(in: .whitespacesAndNewlines)
+      let model = engineLLMModel.trimmingCharacters(in: .whitespacesAndNewlines)
+      let provider = selectedEngineLLMProvider
+      let apiKey = configuredEngineLLMAPIKey()
+
+      guard !apiBase.isEmpty, !model.isEmpty else {
+         return nil
+      }
+
+      if provider.requiresAPIKey {
+         guard let apiKey, !apiKey.isEmpty else {
+            return nil
+         }
+
+         return ProviderConfiguration(
+            apiBase: apiBase,
+            apiKey: apiKey,
+            model: model
+         )
+      }
+
+      return ProviderConfiguration(
+         apiBase: apiBase,
+         apiKey: apiKey ?? "",
+         model: model
+      )
+   }
+
    func currentAIProviderHasRequiredAPIKey() -> Bool {
       hasRequiredAPIKey(for: currentAIProvider)
    }
@@ -726,6 +1025,15 @@ final class SettingsStore: ObservableObject {
       outputMode = Defaults.outputMode
       selectedLanguage = Defaults.selectedLanguage
       selectedInputDeviceUID = Defaults.selectedInputDeviceUID
+      sttMode = .local
+      engineHost = Defaults.engineHost
+      enginePort = Defaults.enginePort
+      selectedEngineSTTProvider = .groq
+      engineSTTAPIBase = Defaults.engineSTTAPIBase
+      engineSTTModel = Defaults.engineSTTModel
+      selectedEngineLLMProvider = .openRouter
+      engineLLMAPIBase = Defaults.engineLLMAPIBase
+      engineLLMModel = Defaults.engineLLMModel
       aiEnhancementEnabled = false
       aiProvider = AIProvider.openai.rawValue
       customLocalProviderType = CustomProviderType.custom.rawValue
@@ -750,8 +1058,15 @@ final class SettingsStore: ObservableObject {
             try? deleteFromKeychain(account: account)
          }
       }
+      for preset in EngineSTTProviderPreset.allCases {
+         try? deleteFromKeychain(account: engineSTTAPIKeyAccount(for: preset))
+      }
+      for preset in EngineLLMProviderPreset.allCases {
+         try? deleteFromKeychain(account: engineLLMAPIKeyAccount(for: preset))
+      }
       try? deleteFromKeychain(account: legacyAPIKeyAccount)
       apiKeys.removeAll()
+      engineSettingsMigratedFromLegacyAI = false
 
       objectWillChange.send()
    }
@@ -1064,5 +1379,69 @@ final class SettingsStore: ObservableObject {
       case .streaming: streamingFeatureEnabled = enabled
       }
       objectWillChange.send()
+   }
+
+   private func saveEngineAPIKey(_ key: String, account: String) throws {
+      guard let normalizedKey = normalizedAPIKey(key) else {
+         try deleteFromKeychain(account: account)
+         apiKeys.removeValue(forKey: account)
+         return
+      }
+
+      try saveToKeychain(value: normalizedKey, account: account)
+      apiKeys[account] = normalizedKey
+   }
+
+   private func loadEngineAPIKey(account: String) -> String? {
+      if let cachedKey = apiKeys[account] {
+         return cachedKey
+      }
+
+      guard let storedKey = normalizedAPIKey((try? loadFromKeychain(account: account)) ?? nil) else {
+         return nil
+      }
+
+      apiKeys[account] = storedKey
+      return storedKey
+   }
+
+   private func migrateLegacyEngineLLMSettingsIfNeeded() {
+      guard !engineSettingsMigratedFromLegacyAI else { return }
+      defer { engineSettingsMigratedFromLegacyAI = true }
+
+      guard let legacyPreset = legacyEngineLLMProviderPreset() else { return }
+      guard let legacyAPIBase = apiEndpoint?.trimmingCharacters(in: .whitespacesAndNewlines),
+         !legacyAPIBase.isEmpty else {
+         return
+      }
+
+      let legacyModel = aiModel.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !legacyModel.isEmpty else { return }
+
+      selectedEngineLLMProvider = legacyPreset
+      engineLLMAPIBase = legacyAPIBase
+      engineLLMModel = legacyModel
+
+      if let legacyAPIKey = configuredAPIKey(for: currentAIProvider), !legacyAPIKey.isEmpty {
+         try? saveEngineLLMAPIKey(legacyAPIKey, for: legacyPreset)
+      }
+   }
+
+   private func legacyEngineLLMProviderPreset() -> EngineLLMProviderPreset? {
+      switch currentAIProvider {
+      case .openrouter:
+         return .openRouter
+      case .openai:
+         return .openAI
+      case .custom:
+         switch currentCustomLocalProvider {
+         case .ollama:
+            return .ollama
+         case .custom, .lmStudio:
+            return .custom
+         }
+      case .anthropic, .google:
+         return nil
+      }
    }
 }

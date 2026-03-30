@@ -1,6 +1,8 @@
 # Build Guide
 
-Complete guide for building, testing, and distributing Pindrop.
+Complete guide for building, testing, and distributing the OpenTypeless macOS client.
+
+The Xcode target and some artifact names still use `Pindrop`. This document describes the current workflow in this repository, not upstream Pindrop release instructions.
 
 ## Prerequisites
 

@@ -24,12 +24,22 @@ struct AIEnhancementSettingsView: View {
    @State private var noteEnhancementPrompt = ""
    @State private var selectedPromptType: PromptType = .transcription
    @State private var showingAPIKey = false
+   @State private var showingEngineSTTAPIKey = false
+   @State private var showingEngineLLMAPIKey = false
    @State private var showingSaveSuccess = false
    @State private var showingPromptSaveSuccess = false
    @State private var errorMessage: String?
    @State private var showAccessibilityAlert = false
    @State private var accessibilityPermissionGranted = false
    @State private var accessibilityPermissionRequestInFlight = false
+   @State private var engineSTTAPIKey = ""
+   @State private var engineLLMAPIKey = ""
+   @State private var engineConnectionStatus: EngineConnectionStatus = .checking
+   @State private var engineConnectionTask: Task<Void, Never>?
+   @State private var localModels: [ModelManager.WhisperModel] = []
+   @State private var downloadedLocalModelNames: Set<String> = []
+   @State private var activeLocalModelOperation: String?
+   @State private var localModelError: String?
 
    @State private var presets: [PromptPreset] = []
    @State private var showPresetManagement = false
@@ -43,6 +53,41 @@ struct AIEnhancementSettingsView: View {
 
    private var promptPresetStore: PromptPresetStore {
       PromptPresetStore(modelContext: modelContext)
+   }
+
+   private var engineHostBinding: Binding<String> {
+      Binding(
+         get: { settings.engineHost },
+         set: { settings.engineHost = $0 }
+      )
+   }
+
+   private var enginePortBinding: Binding<Int> {
+      Binding(
+         get: { settings.enginePort },
+         set: { settings.enginePort = $0 }
+      )
+   }
+
+   private var sttModeBinding: Binding<STTMode> {
+      Binding(
+         get: { settings.sttMode },
+         set: { settings.sttMode = $0 }
+      )
+   }
+
+   private var selectedEngineSTTProviderBinding: Binding<EngineSTTProviderPreset> {
+      Binding(
+         get: { settings.selectedEngineSTTProvider },
+         set: { settings.selectedEngineSTTProvider = $0 }
+      )
+   }
+
+   private var selectedEngineLLMProviderBinding: Binding<EngineLLMProviderPreset> {
+      Binding(
+         get: { settings.selectedEngineLLMProvider },
+         set: { settings.selectedEngineLLMProvider = $0 }
+      )
    }
 
    enum PromptType: String, CaseIterable, Identifiable {
@@ -69,6 +114,34 @@ struct AIEnhancementSettingsView: View {
        }
    }
 
+   enum EngineConnectionStatus: Equatable {
+      case checking
+      case connected(version: String)
+      case disconnected
+
+      var label: String {
+         switch self {
+         case .checking:
+            return "Checking..."
+         case .connected(let version):
+            return "Connected (v\(version))"
+         case .disconnected:
+            return "Disconnected"
+         }
+      }
+
+      var tint: Color {
+         switch self {
+         case .checking:
+            return AppColors.textSecondary
+         case .connected:
+            return .green
+         case .disconnected:
+            return AppColors.warning
+         }
+      }
+   }
+
    var body: some View {
       VStack(spacing: AppTheme.Spacing.xl) {
          enableToggleCard
@@ -78,8 +151,10 @@ struct AIEnhancementSettingsView: View {
       }
       .task {
          loadPresets()
-         loadCredentialsAndPrompt()
+         loadSettingsState()
          refreshPermissionStates()
+         await refreshLocalModels()
+         scheduleEngineConnectionCheck(immediate: true)
       }
       .onChange(of: settings.selectedPresetId) { _, newValue in
          handlePresetChange(newValue)
@@ -87,43 +162,23 @@ struct AIEnhancementSettingsView: View {
       .onChange(of: enhancementPrompt) { _, newValue in
          handlePromptChange(newValue)
       }
-      .onChange(of: selectedProvider) { oldValue, newValue in
-         if newValue == .custom {
-            applyCustomEndpointDefault(forceReset: oldValue != .custom)
-         }
-
-         apiKey = settings.loadAPIKey(for: newValue, customLocalProvider: selectedCustomProvider) ?? ""
-          Task {
-            await loadModelsIfNeeded(
-               for: newValue,
-               customLocalProvider: selectedCustomProvider,
-               forceRefresh: newValue == .custom
-            )
-         }
+      .onChange(of: settings.engineHost) { _, _ in
+         scheduleEngineConnectionCheck()
       }
-      .onChange(of: apiKey) { _, newValue in
-         guard selectedProvider == .openai else { return }
-         guard !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-          Task { await loadModelsIfNeeded(for: .openai, forceRefresh: true) }
+      .onChange(of: settings.enginePort) { _, _ in
+         scheduleEngineConnectionCheck()
       }
-      .onChange(of: selectedCustomProvider) { _, newValue in
-         apiKey = settings.loadAPIKey(for: .custom, customLocalProvider: newValue) ?? ""
-
-         if newValue == .custom {
-            if customModel.isEmpty {
-               customModel = selectedModel
-            }
-            availableModels = []
-            modelError = nil
-         }
-
-         Task {
-            await loadModelsIfNeeded(
-               for: .custom,
-               customLocalProvider: newValue,
-               forceRefresh: true
-            )
-         }
+      .onChange(of: settings.selectedEngineSTTProvider) { _, newValue in
+         applySTTPreset(newValue)
+      }
+      .onChange(of: settings.selectedEngineLLMProvider) { _, newValue in
+         applyLLMPreset(newValue)
+      }
+      .onChange(of: engineSTTAPIKey) { _, newValue in
+         try? settings.saveEngineSTTAPIKey(newValue)
+      }
+      .onChange(of: engineLLMAPIKey) { _, newValue in
+         try? settings.saveEngineLLMAPIKey(newValue)
       }
       .sheet(isPresented: $showPresetManagement) {
          PresetManagementSheet()
@@ -147,10 +202,10 @@ struct AIEnhancementSettingsView: View {
       SettingsCard(title: localized("Status", locale: locale), icon: "sparkles") {
          Toggle(isOn: $settings.aiEnhancementEnabled) {
             VStack(alignment: .leading, spacing: 2) {
-               Text(localized("Enable AI Enhancement", locale: locale))
+               Text(localized("Enable Engine Polish", locale: locale))
                   .font(AppTypography.body)
                   .foregroundStyle(AppColors.textPrimary)
-               Text(localized("Improve transcription quality using AI", locale: locale))
+               Text(localized("Send finished transcripts to Engine `/polish` before output.", locale: locale))
                   .font(AppTypography.caption)
                   .foregroundStyle(AppColors.textSecondary)
             }
@@ -162,15 +217,286 @@ struct AIEnhancementSettingsView: View {
    // MARK: - Provider Card
 
    private var providerCard: some View {
-      SettingsCard(title: localized("Provider", locale: locale), icon: "server.rack") {
-         VStack(spacing: 16) {
-            providerTabs
-               .opacity(settings.aiEnhancementEnabled ? 1 : 0.5)
+      VStack(spacing: AppTheme.Spacing.xl) {
+         engineConnectionCard
+         sttModeCard
 
-            providerConfigContent
-               .opacity(settings.aiEnhancementEnabled ? 1 : 0.5)
+         if settings.sttMode == .local {
+            localSTTCard
+         } else {
+            remoteSTTProviderCard
          }
-         .disabled(!settings.aiEnhancementEnabled)
+
+         llmProviderCard
+      }
+   }
+
+   private var engineConnectionCard: some View {
+      SettingsCard(
+         title: localized("Engine Connection", locale: locale),
+         icon: "server.rack",
+         accessibilityIdentifier: "settings.ai.engineConnection"
+      ) {
+         VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 16) {
+               VStack(alignment: .leading, spacing: 6) {
+                  Text(localized("Host", locale: locale))
+                     .font(.subheadline.weight(.medium))
+                  TextField("127.0.0.1", text: engineHostBinding)
+                     .textFieldStyle(.roundedBorder)
+                     .autocorrectionDisabled()
+                     .accessibilityIdentifier("settings.ai.engine.host")
+               }
+
+               VStack(alignment: .leading, spacing: 6) {
+                  Text(localized("Port", locale: locale))
+                     .font(.subheadline.weight(.medium))
+                  TextField(
+                     "19823",
+                     value: enginePortBinding,
+                     format: .number
+                  )
+                  .textFieldStyle(.roundedBorder)
+                  .accessibilityIdentifier("settings.ai.engine.port")
+               }
+
+               Spacer()
+
+               VStack(alignment: .leading, spacing: 6) {
+                  Text(localized("Status", locale: locale))
+                     .font(.subheadline.weight(.medium))
+                  HStack(spacing: 8) {
+                     Circle()
+                        .fill(engineConnectionStatus.tint)
+                        .frame(width: 8, height: 8)
+                     Text(engineConnectionStatus.label)
+                        .font(AppTypography.caption)
+                        .foregroundStyle(engineConnectionStatus.tint)
+                  }
+               }
+            }
+
+            Text(localized("Client talks to Engine over localhost HTTP. Host and port changes take effect for the next health check, remote STT call, and polish request.", locale: locale))
+               .font(AppTypography.caption)
+               .foregroundStyle(AppColors.textSecondary)
+         }
+      }
+   }
+
+   private var sttModeCard: some View {
+      SettingsCard(
+         title: localized("Transcription Mode", locale: locale),
+         icon: "waveform",
+         accessibilityIdentifier: "settings.ai.sttModeCard"
+      ) {
+         VStack(alignment: .leading, spacing: 16) {
+            Picker(localized("Speech-to-text mode", locale: locale), selection: sttModeBinding) {
+               Text(localized("Local", locale: locale)).tag(STTMode.local)
+               Text(localized("Remote (Engine)", locale: locale)).tag(STTMode.remote)
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("settings.ai.sttMode")
+
+            Text(
+               settings.sttMode == .local
+               ? localized("Local mode keeps speech-to-text on the client and only uses Engine for text polishing.", locale: locale)
+               : localized("Remote mode uploads recorded audio to Engine `/transcribe`, then sends the transcript to `/polish`.", locale: locale)
+            )
+            .font(AppTypography.caption)
+            .foregroundStyle(AppColors.textSecondary)
+         }
+      }
+   }
+
+   private var localSTTCard: some View {
+      SettingsCard(
+         title: localized("Local STT", locale: locale),
+         icon: "desktopcomputer",
+         accessibilityIdentifier: "settings.ai.localSTT"
+      ) {
+         VStack(alignment: .leading, spacing: 16) {
+            if localModels.isEmpty {
+               Text(localized("No local transcription models are available yet.", locale: locale))
+                  .font(AppTypography.caption)
+                  .foregroundStyle(AppColors.textSecondary)
+            } else {
+               Picker(localized("Default model", locale: locale), selection: $settings.selectedModel) {
+                  ForEach(localModels) { model in
+                     Text(model.displayName).tag(model.name)
+                  }
+               }
+               .pickerStyle(.menu)
+               .accessibilityIdentifier("settings.ai.local.model")
+
+               if let selectedModelMetadata = localModels.first(where: { $0.name == settings.selectedModel }) {
+                  VStack(alignment: .leading, spacing: 6) {
+                     Text(selectedModelMetadata.description)
+                        .font(AppTypography.caption)
+                        .foregroundStyle(AppColors.textSecondary)
+
+                     HStack(spacing: 8) {
+                        Text(selectedModelMetadata.formattedSize)
+                           .font(AppTypography.caption)
+                           .foregroundStyle(AppColors.textSecondary)
+
+                        if downloadedLocalModelNames.contains(selectedModelMetadata.name) {
+                           Label(localized("Downloaded", locale: locale), systemImage: "checkmark.circle.fill")
+                              .font(AppTypography.caption)
+                              .foregroundStyle(.green)
+                        } else {
+                           Label(localized("Not downloaded", locale: locale), systemImage: "arrow.down.circle")
+                              .font(AppTypography.caption)
+                              .foregroundStyle(AppColors.warning)
+                        }
+                     }
+                  }
+               }
+
+               HStack(spacing: 12) {
+                  Button(localized("Refresh Downloads", locale: locale)) {
+                     Task { await refreshLocalModels() }
+                  }
+                  .buttonStyle(.bordered)
+
+                  if !downloadedLocalModelNames.contains(settings.selectedModel) {
+                     Button(activeLocalModelOperation == settings.selectedModel ? localized("Downloading...", locale: locale) : localized("Download Selected Model", locale: locale)) {
+                        Task { await downloadSelectedLocalModel() }
+                     }
+                     .buttonStyle(.borderedProminent)
+                     .disabled(activeLocalModelOperation == settings.selectedModel)
+                  }
+               }
+            }
+
+            if let localModelError {
+               Text(localModelError)
+                  .font(AppTypography.caption)
+                  .foregroundStyle(AppColors.warning)
+            }
+         }
+      }
+   }
+
+   private var remoteSTTProviderCard: some View {
+      SettingsCard(
+         title: localized("Remote STT Provider", locale: locale),
+         icon: "icloud.and.arrow.up",
+         accessibilityIdentifier: "settings.ai.remoteSTT"
+      ) {
+         VStack(alignment: .leading, spacing: 16) {
+            Picker(localized("Provider preset", locale: locale), selection: selectedEngineSTTProviderBinding) {
+               ForEach(EngineSTTProviderPreset.allCases) { preset in
+                  Text(preset.displayName).tag(preset)
+               }
+            }
+            .pickerStyle(.menu)
+
+            engineTextField(
+               title: localized("API Base", locale: locale),
+               text: $settings.engineSTTAPIBase,
+               placeholder: settings.selectedEngineSTTProvider.defaultAPIBase,
+               accessibilityIdentifier: "settings.ai.remote.apiBase"
+            )
+
+            engineSecureField(
+               title: localized("API Key", locale: locale),
+               text: $engineSTTAPIKey,
+               isShowing: $showingEngineSTTAPIKey,
+               placeholder: settings.selectedEngineSTTProvider.apiKeyPlaceholder
+            )
+
+            engineTextField(
+               title: localized("Model", locale: locale),
+               text: $settings.engineSTTModel,
+               placeholder: settings.selectedEngineSTTProvider.defaultModel,
+               accessibilityIdentifier: "settings.ai.remote.model"
+            )
+         }
+      }
+   }
+
+   private var llmProviderCard: some View {
+      SettingsCard(
+         title: localized("LLM Provider", locale: locale),
+         icon: "sparkles.rectangle.stack",
+         accessibilityIdentifier: "settings.ai.llmProvider"
+      ) {
+         VStack(alignment: .leading, spacing: 16) {
+            Picker(localized("Provider preset", locale: locale), selection: selectedEngineLLMProviderBinding) {
+               ForEach(EngineLLMProviderPreset.allCases) { preset in
+                  Text(preset.displayName).tag(preset)
+               }
+            }
+            .pickerStyle(.menu)
+
+            engineTextField(
+               title: localized("API Base", locale: locale),
+               text: $settings.engineLLMAPIBase,
+               placeholder: settings.selectedEngineLLMProvider.defaultAPIBase,
+               accessibilityIdentifier: "settings.ai.llm.apiBase"
+            )
+
+            engineSecureField(
+               title: settings.selectedEngineLLMProvider.requiresAPIKey
+                  ? localized("API Key", locale: locale)
+                  : localized("API Key (Optional)", locale: locale),
+               text: $engineLLMAPIKey,
+               isShowing: $showingEngineLLMAPIKey,
+               placeholder: settings.selectedEngineLLMProvider.apiKeyPlaceholder
+            )
+
+            engineTextField(
+               title: localized("Model", locale: locale),
+               text: $settings.engineLLMModel,
+               placeholder: settings.selectedEngineLLMProvider.defaultModel,
+               accessibilityIdentifier: "settings.ai.llm.model"
+            )
+         }
+      }
+   }
+
+   private func engineTextField(
+      title: String,
+      text: Binding<String>,
+      placeholder: String,
+      accessibilityIdentifier: String? = nil
+   ) -> some View {
+      VStack(alignment: .leading, spacing: 6) {
+         Text(title)
+            .font(.subheadline.weight(.medium))
+         TextField(placeholder, text: text)
+            .textFieldStyle(.roundedBorder)
+            .autocorrectionDisabled()
+            .accessibilityIdentifier(accessibilityIdentifier ?? "")
+      }
+   }
+
+   private func engineSecureField(
+      title: String,
+      text: Binding<String>,
+      isShowing: Binding<Bool>,
+      placeholder: String
+   ) -> some View {
+      VStack(alignment: .leading, spacing: 6) {
+         HStack {
+            Text(title)
+               .font(.subheadline.weight(.medium))
+            Spacer()
+            Button(isShowing.wrappedValue ? localized("Hide", locale: locale) : localized("Show", locale: locale)) {
+               isShowing.wrappedValue.toggle()
+            }
+            .buttonStyle(.plain)
+            .font(AppTypography.caption)
+         }
+
+         if isShowing.wrappedValue {
+            TextField(placeholder, text: text)
+               .textFieldStyle(.roundedBorder)
+               .autocorrectionDisabled()
+         } else {
+            SecureField(placeholder, text: text)
+               .textFieldStyle(.roundedBorder)
+         }
       }
    }
 
@@ -1033,43 +1359,83 @@ struct AIEnhancementSettingsView: View {
        return true
     }
 
-    private func loadCredentialsAndPrompt() {
-       let loadedModel = settings.aiModel
-       selectedModel = loadedModel
-       selectedCustomProvider = settings.currentCustomLocalProvider
-
-       loadCustomEndpointDrafts()
-
-       if let endpoint = settings.apiEndpoint {
-          if endpoint.contains("openai.com") {
-             selectedProvider = .openai
-         } else if endpoint.contains("anthropic.com") {
-            selectedProvider = .anthropic
-         } else if endpoint.contains("googleapis.com") {
-            selectedProvider = .google
-          } else if endpoint.contains("openrouter.ai") {
-             selectedProvider = .openrouter
-          } else if !endpoint.isEmpty {
-             selectedProvider = .custom
-             selectedCustomProvider = settings.inferredCustomLocalProvider(for: endpoint) ?? settings.currentCustomLocalProvider
-          }
-       } else if settings.currentAIProvider == .custom {
-          selectedProvider = .custom
-       }
-       customModel = loadedModel
-       apiKey = settings.loadAPIKey(
-          for: selectedProvider,
-          customLocalProvider: selectedCustomProvider
-       ) ?? ""
-
+    private func loadSettingsState() {
        noteEnhancementPrompt = localizedNotePrompt(settings.noteEnhancementPrompt)
+       engineSTTAPIKey = settings.loadEngineSTTAPIKey() ?? ""
+       engineLLMAPIKey = settings.loadEngineLLMAPIKey() ?? ""
+    }
 
-       Task {
-          await loadModelsIfNeeded(
-             for: selectedProvider,
-             customLocalProvider: selectedCustomProvider
-          )
-       }
+   private func applySTTPreset(_ preset: EngineSTTProviderPreset) {
+      settings.engineSTTAPIBase = preset.defaultAPIBase
+      settings.engineSTTModel = preset.defaultModel
+      engineSTTAPIKey = settings.loadEngineSTTAPIKey(for: preset) ?? ""
+   }
+
+   private func applyLLMPreset(_ preset: EngineLLMProviderPreset) {
+      settings.engineLLMAPIBase = preset.defaultAPIBase
+      settings.engineLLMModel = preset.defaultModel
+      engineLLMAPIKey = settings.loadEngineLLMAPIKey(for: preset) ?? ""
+   }
+
+   private func scheduleEngineConnectionCheck(immediate: Bool = false) {
+      engineConnectionTask?.cancel()
+      engineConnectionTask = Task {
+         if !immediate {
+            try? await Task.sleep(for: .milliseconds(300))
+         }
+         guard !Task.isCancelled else { return }
+         await refreshEngineConnectionStatus()
+      }
+   }
+
+   @MainActor
+   private func refreshEngineConnectionStatus() async {
+      engineConnectionStatus = .checking
+      do {
+         let response = try await EngineClient(
+            host: settings.engineHost,
+            port: settings.enginePort
+         ).health()
+         engineConnectionStatus = .connected(version: response.version)
+      } catch {
+         engineConnectionStatus = .disconnected
+      }
+   }
+
+   @MainActor
+   private func refreshLocalModels() async {
+      let modelManager = ModelManager()
+      localModels = modelManager.availableModels.filter {
+         $0.provider.isLocal && $0.availability == .available
+      }
+
+      await modelManager.refreshDownloadedModels()
+      let downloadedModels = await modelManager.getDownloadedModels()
+      downloadedLocalModelNames = Set(downloadedModels.map(\.name))
+   }
+
+   @MainActor
+   private func downloadSelectedLocalModel() async {
+      let modelName = settings.selectedModel
+      guard !modelName.isEmpty else { return }
+
+      activeLocalModelOperation = modelName
+      localModelError = nil
+      let modelManager = ModelManager()
+
+      do {
+         try await modelManager.downloadModel(named: modelName)
+         let downloadedModels = await modelManager.getDownloadedModels()
+         downloadedLocalModelNames = Set(downloadedModels.map(\.name))
+      } catch {
+         localModelError = String(
+            format: localized("Failed to download %@: %@", locale: locale),
+            modelName,
+            error.localizedDescription
+         )
+      }
+
+      activeLocalModelOperation = nil
    }
 
    private func savePrompt() {

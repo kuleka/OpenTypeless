@@ -1,8 +1,16 @@
-# Contributing to Pindrop
+# Contributing to the OpenTypeless macOS Client
 
-Thank you for your interest in contributing to Pindrop! Whether you're fixing a bug, adding a feature, or improving documentation, your help is welcome and appreciated.
+Thank you for your interest in contributing to the OpenTypeless macOS client. Whether you're fixing a bug, adding a feature, or improving documentation, your help is welcome and appreciated.
 
-Pindrop is a macOS menu bar dictation app that uses [WhisperKit](https://github.com/argmaxinc/WhisperKit) for fully local, on-device speech-to-text. It's built with Swift and SwiftUI, targets macOS 14+, and has a single external dependency.
+This client is a macOS menu bar dictation app built with Swift and SwiftUI. It still contains the original Pindrop foundation, but the main dictation flow now runs as the OpenTypeless macOS client. The repo currently uses pinned Swift package dependencies including WhisperKit, FluidAudio, and Sparkle.
+
+This repository is also the current OpenTypeless macOS client. Phase 1 of the `OpenTypeless Client + Engine` split is complete, while a few auxiliary legacy flows remain in the codebase.
+
+Useful references before making changes:
+
+- [OpenTypeless root README](../../README.md)
+- [Engine ↔ Client API contract](../../docs/api-contract.md)
+- [macOS client Phase 1 summary](../../docs/macos-client-phase1.md)
 
 ## Table of Contents
 
@@ -34,11 +42,11 @@ brew install swiftlint swiftformat
 
 ### Clone and Build
 
-1. **Fork the repository** on GitHub, then clone your fork:
+1. **Fork the repository** on GitHub, then clone your fork or local copy of OpenTypeless:
 
    ```bash
-   git clone https://github.com/YOUR_USERNAME/pindrop.git
-   cd pindrop
+   git clone <your-fork-of-OpenTypeless>
+   cd OpenTypeless/clients/macos
    ```
 
 2. **Build the project:**
@@ -56,13 +64,22 @@ brew install swiftlint swiftformat
 4. **Open in Xcode** (if you prefer the IDE):
 
    ```bash
-   just xcode
-   # Or: open Pindrop.xcodeproj
+   open Pindrop.xcodeproj
    ```
 
 For the full build system reference (release builds, DMGs, code signing, notarization), see [BUILD.md](BUILD.md).
 
 ## Development Workflow
+
+### Current Architecture Transition
+
+When working in this repo, assume three layers are currently coexisting:
+
+- original local Pindrop-era transcription and enhancement components
+- the new Engine HTTP integration pieces such as `EngineClient`, `EngineTranscriptionEngine`, and `PolishService`
+- a mostly migrated app orchestration layer with a few remaining legacy auxiliary paths
+
+The main dictation flow is migrated. Do not assume every auxiliary flow has been migrated.
 
 ### Branch Naming
 
@@ -227,6 +244,32 @@ xcodebuild test -scheme Pindrop -destination 'platform=macOS' \
     -only-testing:PindropTests/AudioRecorderTests/testStartRecordingRequestsPermission
 ```
 
+For current OpenTypeless work, these two direct commands are especially useful:
+
+```bash
+cd clients/macos
+swift test
+```
+
+This runs the lightweight `EngineCore` package tests for the shared Engine support layer.
+
+```bash
+cd clients/macos
+xcodebuild test \
+  -project Pindrop.xcodeproj \
+  -scheme Pindrop \
+  -destination 'platform=macOS' \
+  -derivedDataPath /tmp/OpenTypelessDerivedData \
+  -clonedSourcePackagesDirPath /tmp/OpenTypelessSourcePackages \
+  -only-testing:PindropTests \
+  CODE_SIGNING_ALLOWED=NO \
+  CODE_SIGNING_REQUIRED=NO \
+  CODE_SIGN_IDENTITY='' \
+  DEVELOPMENT_TEAM=''
+```
+
+This is the most reliable full-app test command for the current local setup.
+
 ### Test Isolation
 
 Tests are isolated from user settings. The test plans set `PINDROP_TEST_MODE=1`, which causes `SettingsStore` to use test-only `@AppStorage` and Keychain backends. You don't need to do anything special; just make sure new settings-dependent code respects this flag.
@@ -297,9 +340,12 @@ All business logic lives in `Services/`. Each service is a single-responsibility
 ```
 AppCoordinator.handleToggleRecording()
     → AudioRecorder (capture audio)
-    → TranscriptionService (run WhisperKit)
+    → TranscriptionService (local or remote STT)
+    → PolishService for the main dictation flow
     → OutputManager (clipboard / direct insert)
 ```
+
+Some auxiliary paths such as quick capture note still retain legacy behavior and should be treated separately from the main dictation pipeline.
 
 ### Adding New Views
 
@@ -357,11 +403,11 @@ These are project-specific guardrails. Violating them will block your PR.
 
 - **Architecture questions**: Read [AGENTS.md](AGENTS.md) first — it covers structure, conventions, and where to find things.
 - **Build issues**: See [BUILD.md](BUILD.md) for the full build system reference.
-- **Still stuck?** Open a [GitHub Discussion](https://github.com/watzon/pindrop/discussions) or ask in an issue.
+- **Still stuck?** Start from the docs in this repository and then open a discussion or issue in the current OpenTypeless repo if needed.
 
 ### Reporting Bugs
 
-Open a [GitHub Issue](https://github.com/watzon/pindrop/issues/new) with:
+Open an issue in the current repository with:
 
 - macOS version and Mac model
 - Steps to reproduce
@@ -370,7 +416,7 @@ Open a [GitHub Issue](https://github.com/watzon/pindrop/issues/new) with:
 
 ### Feature Requests
 
-Open a [GitHub Issue](https://github.com/watzon/pindrop/issues/new) describing:
+Open an issue in the current repository describing:
 
 - The problem you're trying to solve
 - Your proposed solution
@@ -380,4 +426,4 @@ Check the [anti-patterns](#anti-patterns-to-avoid) and scope constraints above b
 
 ## License
 
-By contributing to Pindrop, you agree that your contributions will be licensed under the [MIT License](LICENSE).
+By contributing to the OpenTypeless macOS client, you agree that your contributions will be licensed under the [MIT License](LICENSE).

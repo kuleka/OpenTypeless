@@ -660,6 +660,64 @@ struct TranscriptionServiceTests {
                 "Error should indicate provider not supported")
     }
 
+    @Test func localSTTModeUsesLocalEngineFactory() async throws {
+        let localEngine = MockDiarizationTranscriptionEngine()
+        localEngine.transcribeResponses = ["local transcript"]
+        let remoteEngine = MockDiarizationTranscriptionEngine()
+        var localFactoryCallCount = 0
+        var remoteFactoryCallCount = 0
+
+        let service = TranscriptionService(
+            engineFactory: { _ in
+                localFactoryCallCount += 1
+                return localEngine
+            },
+            diarizerFactory: { MockSpeakerDiarizer() },
+            streamingEngineFactory: { MockStreamingTranscriptionEngine() },
+            sttModeProvider: { .local },
+            remoteEngineFactory: {
+                remoteFactoryCallCount += 1
+                return remoteEngine
+            }
+        )
+
+        try await service.loadModel(modelName: "tiny", provider: .whisperKit)
+        let text = try await service.transcribe(audioData: makeFloatAudioData(seconds: 1.0))
+
+        #expect(text == "local transcript")
+        #expect(localFactoryCallCount == 1)
+        #expect(remoteFactoryCallCount == 0)
+    }
+
+    @Test func remoteSTTModeUsesEngineTranscriptionEngineFactory() async throws {
+        let localEngine = MockDiarizationTranscriptionEngine()
+        let remoteEngine = MockDiarizationTranscriptionEngine()
+        remoteEngine.transcribeResponses = ["remote transcript"]
+        var localFactoryCallCount = 0
+        var remoteFactoryCallCount = 0
+
+        let service = TranscriptionService(
+            engineFactory: { _ in
+                localFactoryCallCount += 1
+                return localEngine
+            },
+            diarizerFactory: { MockSpeakerDiarizer() },
+            streamingEngineFactory: { MockStreamingTranscriptionEngine() },
+            sttModeProvider: { .remote },
+            remoteEngineFactory: {
+                remoteFactoryCallCount += 1
+                return remoteEngine
+            }
+        )
+
+        try await service.loadModel(modelName: "tiny", provider: .parakeet)
+        let text = try await service.transcribe(audioData: makeFloatAudioData(seconds: 1.0))
+
+        #expect(text == "remote transcript")
+        #expect(localFactoryCallCount == 0)
+        #expect(remoteFactoryCallCount == 1)
+    }
+
     private func makeStreamingBuffer(frameCount: AVAudioFrameCount = 320) throws -> AVAudioPCMBuffer {
         guard let format = AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1),
               let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount),

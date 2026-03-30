@@ -72,12 +72,15 @@ class TranscriptionService {
     private var speakerDiarizer: (any SpeakerDiarizer)?
     private var streamingEngine: (any StreamingTranscriptionEngine)?
     private var currentProvider: ModelManager.ModelProvider?
+    private var currentSTTMode: STTMode?
     private var streamingPartialCallback: (@Sendable (String) -> Void)?
     private var streamingFinalUtteranceCallback: (@Sendable (String) -> Void)?
 
     private let engineFactory: @MainActor (ModelManager.ModelProvider) throws -> any TranscriptionEngine
     private let speakerDiarizerFactory: @MainActor () -> any SpeakerDiarizer
     private let streamingEngineFactory: @MainActor () -> any StreamingTranscriptionEngine
+    private let sttModeProvider: @MainActor () -> STTMode
+    private let remoteEngineFactory: @MainActor () -> any TranscriptionEngine
 
     init(
         engineFactory: @escaping @MainActor (ModelManager.ModelProvider) throws -> any TranscriptionEngine = {
@@ -88,19 +91,34 @@ class TranscriptionService {
         },
         streamingEngineFactory: @escaping @MainActor () -> any StreamingTranscriptionEngine = {
             ParakeetStreamingEngine()
+        },
+        sttModeProvider: @escaping @MainActor () -> STTMode = {
+            SettingsStore().sttMode
+        },
+        remoteEngineFactory: @escaping @MainActor () -> any TranscriptionEngine = {
+            let settings = SettingsStore()
+            let client = EngineClient(
+                host: settings.engineHost,
+                port: settings.enginePort
+            )
+            return EngineTranscriptionEngine(client: client)
         }
     ) {
         self.engineFactory = engineFactory
         self.speakerDiarizerFactory = diarizerFactory
         self.streamingEngineFactory = streamingEngineFactory
+        self.sttModeProvider = sttModeProvider
+        self.remoteEngineFactory = remoteEngineFactory
     }
 
     func loadModel(modelName: String = "tiny", provider: ModelManager.ModelProvider = .whisperKit) async throws {
+        let sttMode = sttModeProvider()
+
         if state == .transcribing {
             throw TranscriptionError.engineSwitchDuringTranscription
         }
 
-        if currentProvider != nil && currentProvider != provider {
+        if shouldResetEngine(for: sttMode, provider: provider) {
             await unloadModel()
         }
 
@@ -112,14 +130,15 @@ class TranscriptionService {
         Log.boot.info("TranscriptionService.loadModel begin name=\(modelName) provider=\(provider.rawValue) state=loading")
 
         do {
-            let newEngine = try engineFactory(provider)
-            Log.boot.info("TranscriptionService.loadModel engine instance created provider=\(provider.rawValue) elapsed=\(String(format: "%.2fs", CFAbsoluteTimeGetCurrent() - loadStarted))")
+            let newEngine = try makeTranscriptionEngine(for: sttMode, provider: provider)
+            Log.boot.info("TranscriptionService.loadModel engine instance created provider=\(resolvedProviderName(mode: sttMode, provider: provider)) elapsed=\(String(format: "%.2fs", CFAbsoluteTimeGetCurrent() - loadStarted))")
+            let downloadBase = sttMode == .local ? getDownloadBase() : nil
 
             try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask {
                     Log.boot.info("TranscriptionService.loadModel engine.loadModel task started name=\(modelName)")
                     let engineLoadStart = CFAbsoluteTimeGetCurrent()
-                    try await newEngine.loadModel(name: modelName, downloadBase: self.getDownloadBase())
+                    try await newEngine.loadModel(name: modelName, downloadBase: downloadBase)
                     Log.boot.info("TranscriptionService.loadModel engine.loadModel task finished elapsed=\(String(format: "%.2fs", CFAbsoluteTimeGetCurrent() - engineLoadStart))")
                 }
 
@@ -133,8 +152,9 @@ class TranscriptionService {
             }
 
             engine = newEngine
-            currentProvider = provider
-            Log.transcription.info("Model loaded successfully with \(provider.rawValue) engine")
+            currentProvider = sttMode == .local ? provider : nil
+            currentSTTMode = sttMode
+            Log.transcription.info("Model loaded successfully with \(currentEngineName()) engine")
             Log.boot.info("TranscriptionService.loadModel success totalElapsed=\(String(format: "%.2fs", CFAbsoluteTimeGetCurrent() - loadStarted))")
             state = .ready
         } catch let error as TranscriptionError {
@@ -154,11 +174,13 @@ class TranscriptionService {
     }
 
     func loadModel(modelPath: String) async throws {
+        let sttMode = sttModeProvider()
+
         if state == .transcribing {
             throw TranscriptionError.engineSwitchDuringTranscription
         }
 
-        if currentProvider != nil {
+        if shouldResetEngine(for: sttMode, provider: .whisperKit) {
             await unloadModel()
         }
 
@@ -170,8 +192,14 @@ class TranscriptionService {
         Log.boot.info("TranscriptionService.loadModel(path) begin")
 
         do {
-            let newEngine = WhisperKitEngine()
-            Log.boot.info("TranscriptionService.loadModel(path) WhisperKitEngine created elapsed=\(String(format: "%.2fs", CFAbsoluteTimeGetCurrent() - loadStarted))")
+            let newEngine: any TranscriptionEngine
+            switch sttMode {
+            case .local:
+                newEngine = WhisperKitEngine()
+            case .remote:
+                newEngine = remoteEngineFactory()
+            }
+            Log.boot.info("TranscriptionService.loadModel(path) engine created mode=\(sttMode.rawValue) elapsed=\(String(format: "%.2fs", CFAbsoluteTimeGetCurrent() - loadStarted))")
 
             try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask {
@@ -190,7 +218,8 @@ class TranscriptionService {
             }
 
             engine = newEngine
-            currentProvider = .whisperKit
+            currentProvider = sttMode == .local ? .whisperKit : nil
+            currentSTTMode = sttMode
             Log.transcription.info("Model loaded and prewarmed successfully")
             Log.boot.info("TranscriptionService.loadModel(path) success totalElapsed=\(String(format: "%.2fs", CFAbsoluteTimeGetCurrent() - loadStarted))")
             state = .ready
@@ -250,7 +279,7 @@ class TranscriptionService {
         do {
             let floatCount = audioData.count / MemoryLayout<Float>.size
             let duration = Double(floatCount) / Double(Self.sampleRate)
-            let providerName = currentProvider?.rawValue ?? "unknown"
+            let providerName = currentEngineName()
             Log.transcription.info("Transcribing \(floatCount) samples (\(String(format: "%.2f", duration))s) using \(providerName)")
 
             let startTime = Date()
@@ -288,6 +317,7 @@ class TranscriptionService {
         speakerDiarizer = nil
         streamingEngine = nil
         currentProvider = nil
+        currentSTTMode = nil
         state = .unloaded
         error = nil
     }
@@ -766,6 +796,52 @@ class TranscriptionService {
         let created = speakerDiarizerFactory()
         speakerDiarizer = created
         return created
+    }
+
+    private func makeTranscriptionEngine(
+        for sttMode: STTMode,
+        provider: ModelManager.ModelProvider
+    ) throws -> any TranscriptionEngine {
+        switch sttMode {
+        case .local:
+            return try engineFactory(provider)
+        case .remote:
+            return remoteEngineFactory()
+        }
+    }
+
+    private func shouldResetEngine(
+        for sttMode: STTMode,
+        provider: ModelManager.ModelProvider
+    ) -> Bool {
+        if let currentSTTMode, currentSTTMode != sttMode {
+            return true
+        }
+
+        guard sttMode == .local else {
+            return false
+        }
+
+        guard let currentProvider else {
+            return false
+        }
+
+        return currentProvider != provider
+    }
+
+    private func currentEngineName() -> String {
+        resolvedProviderName(mode: currentSTTMode, provider: currentProvider)
+    }
+
+    private func resolvedProviderName(
+        mode: STTMode?,
+        provider: ModelManager.ModelProvider?
+    ) -> String {
+        if mode == .remote {
+            return "Engine"
+        }
+
+        return provider?.rawValue ?? "unknown"
     }
 
     private static func defaultEngineFactory(
