@@ -1,532 +1,501 @@
 # Open Typeless — 项目规划文档
 
-> 一个开源的 Typeless 平替方案。用云端 STT + LLM 润色，以不到 $1/月的成本实现 $30/月的商业产品体验。
+> 最后更新：2026-03-29
+> 这份文档用于记录项目的长期目标、已经确认的架构决策、当前真实状态，以及下一阶段规划。
 
 ---
 
-## 1. 项目背景与动机
+## 1. 项目定位
 
-### 1.1 什么是 Typeless
+OpenTypeless 是一个开源的 Typeless 替代方案。
 
-Typeless 是一款 AI 语音听写工具（$12/月年付，$30/月月付）。核心功能是：用户自然说话 → 自动去除口头禅和重复 → 根据当前使用的应用自动调整语气 → 输出润色后的文字，直接粘贴到光标位置。
+核心体验是：
 
-### 1.2 为什么做 Open Typeless
-
-Typeless 的技术本质是两个 API 调用的组合：语音转文字（STT）+ 大语言模型润色（LLM）。这两个环节都有成熟的开源方案和廉价 API。我们通过自研，可以把月成本从 $12-30 降到 $0.1-3。
-
-### 1.3 项目目标
-
-- 开源、免费、跨平台（引擎层）
-- macOS 原生客户端（首个前端实现）
-
----
-
-## 2. 技术决策记录
-
-以下是在项目规划阶段经过讨论确定的所有技术决策。
-
-### 2.1 架构：Monorepo + 前后端分离
-
-**决策**：核心引擎和客户端在同一个 Git 仓库（monorepo）中，但作为独立模块通过 HTTP 协议通信。
-
-**理由**：
-- 引擎必须跨平台可用（macOS/Windows/Linux 的不同客户端都能接入）
-- 未来可能用不同语言重写引擎或客户端，HTTP 是最通用的通信协议
-- Monorepo 方便管理、发版、社区贡献
-- 本地 HTTP 通信延迟 <1ms，不影响用户体感
-
-**否决的方案**：
-- 引擎嵌入客户端进程（Swift 内直接调用）→ 否决原因：失去跨平台能力，未来换语言要重写
-- 两个独立仓库 → 否决原因：增加管理成本，贡献者体验差
-- stdin/stdout 管道通信 → 否决原因：进程管理复杂，不同操作系统行为差异大
-- Unix socket → 否决原因：Windows 不原生支持
-
-### 2.2 引擎语言：Python
-
-**决策**：核心引擎用 Python 编写。
-
-**理由**：
-- 引擎的核心工作是调用云端 API（STT + LLM），不需要高性能计算
-- Python 的 LLM 生态最丰富（OpenAI SDK、httpx、各种 STT 客户端库）
-- 社区贡献者门槛最低
-- 容易分发：`pip install open-typeless`
-
-**否决的方案**：
-- Rust → 否决原因：引擎没有性能瓶颈，Rust 的优势发挥不出来，增加贡献门槛
-- Go → 否决原因：类似理由，LLM 生态不如 Python
-- Swift → 否决原因：不跨平台
-
-### 2.3 macOS 客户端基座：Pindrop
-
-**决策**：macOS 客户端基于 Pindrop 项目改造。
-
-**理由**：
-- MIT 协议，无法律限制
-- 纯 Swift/SwiftUI 原生实现，打包小（几十 MB vs Electron 几百 MB）
-- 已解决全局快捷键、麦克风录音、自动粘贴、权限管理等底层问题
-- 代码量小（164 commits），架构清晰，容易理解和改造
-- 留出的空白（无场景检测、无 LLM 集成）正好是我们的独立贡献空间
-
-**否决的方案**：
-- VoiceInk → 否决原因：GPLv3 协议（fork 必须开源且使用相同协议），不接受 PR，代码量大（1055 commits）不容易理解
-- OpenWhispr → 否决原因：Electron 架构，打包太重
-- 从头写 → 否决原因：全局快捷键、权限管理等底层工作耗时且对简历无贡献
-- SwiftShip 等 boilerplate → 否决原因：只解决项目初始化问题，不解决录音/快捷键/粘贴等领域特定问题
-
-### 2.4 STT 方案：云端 API
-
-**决策**：使用云端 STT API（首选 Groq Whisper，备选 Deepgram）。
-
-**理由**：
-- Groq Whisper 对 10 秒音频的处理延迟约 200-300ms，速度极快
-- 支持中英混杂及 100+ 语言
-- 不依赖本地 GPU，降低用户硬件门槛
-- 成本极低：约 $0.004/分钟，日均 30 分钟听写约 $3.6/月
-
-**延迟优化**：采用"边录边传"策略——用户说话时就通过 WebSocket 把音频流实时发给 STT，松开按键时 STT 已经处理了大部分音频，尾部处理仅需 50-100ms。
-
-### 2.5 LLM 方案：OpenRouter + MiniMax M2.7
-
-**决策**：通过 OpenRouter API 调用 MiniMax M2.7 做文本润色。
-
-**理由**：
-- MiniMax M2.7 价格 $0.30/百万输入 token，$1.20/百万输出 token
-- OpenRouter 上还有 MiniMax M2.5 免费版（$0/百万 token）
-- 日均 30 分钟听写产出约 6000 input token + 5000 output token/天，月成本约 $0.06
-- OpenRouter 统一了 300+ 模型的 API 接口，用户可以自由切换模型
-
-### 2.6 场景检测方案
-
-**决策**：客户端通过 macOS Accessibility API 检测当前前台应用的 bundle ID 和窗口标题，将场景信息发送给引擎，引擎根据场景选择对应的 prompt 模板。
-
-**技术实现**：
-- macOS: `NSWorkspace.shared.frontmostApplication?.bundleIdentifier`
-- 浏览器内页面判断：通过窗口标题（如 "Gmail" / "ChatGPT"）
-- 场景映射表：app bundle ID → 场景枚举（email / chat / ai_chat / document / code / default）
-
-**注意**：Typeless 的场景检测功能目前也是基于固定规则，不支持用户自定义（用户在 Product Hunt 上反馈过这个需求）。我们可以做得更灵活，支持用户自定义规则。
-
-### 2.7 输出方式
-
-**决策**：LLM 润色完成后，将完整结果一次性通过剪贴板粘贴到光标位置。
-
-**否决的方案**：
-- LLM 流式输出逐字粘贴 → 否决原因：剪贴板粘贴是一次性操作，无法逐字执行。用户体验也不合适——听写场景需要完整结果一次性出现。
-
-### 2.8 SDD 工具：OpenSpec
-
-**决策**：使用 OpenSpec 管理规格驱动开发流程。
-
-**理由**：
-- 轻量级：生成约 250 行 spec（vs Spec Kit 的 800 行）
-- 适合 brownfield 开发（在已有项目上加功能）
-- 支持 Claude Code、Cursor 等 20+ AI 工具
-- 安装简单：`npm install -g @fission-ai/openspec`
-
-**否决的方案**：
-- GitHub Spec Kit → 否决原因：偏重型，适合大型 greenfield 项目，对我们这个体量的项目开销过大
-- BMAD-METHOD → 否决原因：企业级框架，21 个 agent 的复杂度不适合个人项目
-
-### 2.9 AI IDE：Claude Code
-
-**决策**：主力开发工具使用 Claude Code（终端模式）。
-
-**理由**：
-- 与 OpenSpec 原生集成最好
-- 对 Swift 和 Python 代码理解能力强
-- 终端模式适合同时操作多个子目录（engine / clients/macos）
-
----
-
-## 3. 仓库结构
-
+```text
+用户自然说话
+  -> 语音转文字（本地或远程 STT）
+  -> 基于当前应用场景进行润色
+  -> 输出到当前光标位置
 ```
-open-typeless/
+
+项目目标：
+
+- 开源、可自托管、可低成本运行
+- 引擎层跨平台，客户端可以逐步扩展到 macOS / Windows / Linux
+- 首个完整客户端为 macOS 原生应用
+
+---
+
+## 2. 当前状态总览
+
+截至目前，Phase 1 基础能力已经完成并合并到 `main`：
+
+- Python Engine 已完成
+- macOS Client 的主听写链路已完成 `Client + Engine` 架构迁移
+- OpenSpec 主线 specs 已建立，当前没有 active change
+
+当前基线来源：
+
+- [主线 OpenSpec specs](openspec/specs)
+- [Engine ↔ Client API contract](docs/api-contract.md)
+- [macOS Client Phase 1 总结](docs/macos-client-phase1.md)
+
+当前已归档的关键 change：
+
+- `2026-03-29-phase1-core-engine`
+- `2026-03-29-engine-api-v14-upgrade`
+- `2026-03-30-phase1-macos-client`
+
+一句话总结当前状态：
+
+```text
+Phase 1 已完成
+  = Engine 可用 + macOS 主链路可用 + OpenSpec 基线已归档
+```
+
+---
+
+## 3. 已确认的架构决策
+
+### 3.1 Monorepo + 本地 HTTP 边界
+
+**决策**：Engine 和各端 Client 放在同一个仓库中，但通过 localhost HTTP 契约解耦。
+
+**原因**：
+
+- Engine 必须可被多个客户端复用
+- Client 和 Engine 可以独立演进
+- 协议边界清晰，便于测试、替换和未来多端扩展
+- Monorepo 方便统一管理文档、协议、版本和贡献流程
+
+### 3.2 Engine 语言：Python
+
+**决策**：核心引擎使用 Python。
+
+**原因**：
+
+- 当前主要工作是 HTTP 编排、STT/LLM API 调用和 prompt 路由
+- Python 生态对 FastAPI、httpx、测试、未来 LLM 相关扩展都更友好
+- 分发和社区贡献门槛较低
+
+### 3.3 macOS 客户端基座：Pindrop
+
+**决策**：macOS 客户端基于 Pindrop 改造。
+
+**原因**：
+
+- MIT 协议，法律风险低
+- 原生 Swift / SwiftUI，打包体积和系统集成都更好
+- 已经具备全局热键、录音、输出、权限管理等底层能力
+- 适合作为薄客户端继续演化，而不是从头重写
+
+### 3.4 当前转写策略：双模式 STT
+
+**决策**：Phase 1 同时保留本地 STT 和远程 STT。
+
+当前实现是：
+
+- **本地 STT 模式**：macOS 客户端本地转写，再将文本发给 `POST /polish`
+- **远程 STT 模式**：macOS 客户端先调用 `POST /transcribe`，再用结果调用 `POST /polish`
+
+补充说明：
+
+- API 契约仍支持“直接把音频发给 `/polish`”这一模式
+- 但当前 macOS 客户端主路径已经明确采用 `/transcribe -> /polish(text)`，这样更清晰，也更便于调试
+
+### 3.5 Provider 策略：Engine provider-agnostic
+
+**决策**：Engine 不写死 Groq、OpenAI、Deepgram、OpenRouter 中任何一家。
+
+当前约束：
+
+- `POST /config` 接收 `stt` 和 `llm` 的 `api_base / api_key / model`
+- Client 负责 provider preset 和 UX
+- Engine 负责按契约调用兼容接口
+
+这意味着：
+
+- 你可以用 Groq 做 STT，OpenRouter 做 LLM
+- 也可以本地 STT + Ollama LLM
+- 也可以全用 OpenAI
+
+### 3.6 场景检测放在 Client
+
+**决策**：前台应用检测和窗口标题采集在 Client 侧完成，Engine 只消费 `app_id` / `window_title`。
+
+**原因**：
+
+- 场景信息天然依赖操作系统能力
+- Engine 不应该知道 macOS Accessibility 细节
+- 这样 Windows / Linux 客户端未来也可以复用同一套 Engine 接口
+
+### 3.7 输出方式：一次性输出完整结果
+
+**决策**：润色完成后一次性输出到光标位置，不做逐字流式粘贴。
+
+**原因**：
+
+- 剪贴板 / 直接插入更适合最终文本结果
+- 听写场景强调“完整文本一次到位”，不是聊天式 token 流
+
+---
+
+## 4. 当前仓库结构
+
+下面是目前仓库里的真实结构，不是最初草案结构：
+
+```text
+OpenTypeless/
 ├── README.md
-├── LICENSE (MIT)
-│
-├── engine/                           # 核心引擎（Python）
+├── LICENSE
+├── open-typeless-project-plan.md
+├── docs/
+│   ├── api-contract.md
+│   └── macos-client-phase1.md
+├── engine/
 │   ├── pyproject.toml
 │   ├── open_typeless/
-│   │   ├── __init__.py
-│   │   ├── server.py                 # 本地 HTTP server（localhost:19823）
-│   │   ├── stt.py                    # 云端 STT 调用（Groq/Deepgram）
-│   │   ├── llm.py                    # OpenRouter API 调用
-│   │   ├── prompt_router.py          # 场景 → prompt 模板路由
-│   │   ├── context.py                # 上下文组装（system + context + user text）
-│   │   ├── style_memory.py           # 风格记忆系统（未来 Level 2）
-│   │   └── prompts/
-│   │       └── defaults.yaml         # 默认场景 prompt 配置
-│   ├── cli.py                        # CLI 入口
+│   │   ├── cli.py
+│   │   ├── config.py
+│   │   ├── context.py
+│   │   ├── llm.py
+│   │   ├── models.py
+│   │   ├── prompt_router.py
+│   │   ├── server.py
+│   │   ├── stt.py
+│   │   └── prompts/defaults.yaml
 │   └── tests/
-│
 ├── clients/
-│   ├── macos/                        # macOS 客户端（Swift，基于 Pindrop）
-│   │   ├── OpenTypeless.xcodeproj
-│   │   ├── App/
-│   │   │   ├── Views/
-│   │   │   ├── Services/
-│   │   │   │   ├── AudioRecorder.swift      # Pindrop 已有
-│   │   │   │   ├── HotkeyManager.swift      # Pindrop 已有
-│   │   │   │   ├── OutputManager.swift      # Pindrop 已有
-│   │   │   │   ├── ActiveAppDetector.swift  # 新增：场景检测
-│   │   │   │   └── EngineClient.swift       # 新增：与引擎 HTTP 通信
-│   │   │   └── Settings/
-│   │   ├── LICENSE                          # 保留 Pindrop 的 MIT LICENSE
-│   │   └── README.md                        # 注明 Based on Pindrop
-│   │
-│   ├── windows/                      # 未来扩展
-│   │   └── README.md                 # "Coming soon / Contributors welcome"
-│   │
-│   └── linux/                        # 未来扩展
-│       └── README.md
-│
-├── docs/
-│   ├── architecture.md               # 架构说明
-│   ├── engine-api.md                 # 引擎 HTTP API 文档
-│   └── contributing.md               # 贡献指南
-│
-└── openspec/                         # OpenSpec SDD 文档
-    ├── project.md
+│   └── macos/
+│       ├── Pindrop/
+│       ├── PindropTests/
+│       ├── PindropUITests/
+│       ├── Pindrop.xcodeproj
+│       ├── Package.swift
+│       ├── README.md
+│       ├── CONTRIBUTING.md
+│       ├── BUILD.md
+│       └── RELEASING.md
+└── openspec/
     ├── specs/
-    └── changes/
+    └── changes/archive/
 ```
+
+需要特别注意：
+
+- macOS 工程和 target 仍然叫 `Pindrop`
+- 这是历史连续性问题，不代表项目名称还是 Pindrop
 
 ---
 
-## 4. 引擎 HTTP API 协议
+## 5. 当前 API 基线
 
-引擎作为本地 HTTP server 运行在 `localhost:19823`。
+**唯一协议真相**： [docs/api-contract.md](docs/api-contract.md)
 
-### 4.1 POST /polish
+当前核心端点：
 
-主接口：接收音频 + 场景信息，返回润色后的文本。
+- `GET /health`
+- `POST /config`
+- `GET /config`
+- `POST /transcribe`
+- `POST /polish`
+- `GET /contexts`
+- `POST /contexts`
 
-**请求：**
-```json
-{
-  "audio_base64": "UklGRi...",
-  "audio_format": "wav",
-  "context": {
-    "app_id": "com.apple.mail",
-    "app_name": "Mail",
-    "window_title": "Re: Q3 Report"
-  },
-  "options": {
-    "model": "minimax/minimax-m2.7",
-    "language": "auto"
-  }
-}
-```
+当前重要约束：
 
-**响应：**
-```json
-{
-  "text": "Hi Tom,\n\nThanks for sharing the Q3 report...",
-  "raw_transcript": "嗯 那个 hi tom 就是 thanks for sharing the 那个 Q3 report",
-  "context_detected": "email",
-  "model_used": "minimax/minimax-m2.7",
-  "stt_ms": 210,
-  "llm_ms": 185,
-  "total_ms": 395
-}
-```
+- Client 启动后先 `GET /health`
+- 再通过 `POST /config` 推送 LLM/STT 配置
+- 本地 STT 模式：直接把文本发给 `/polish`
+- 远程 STT 模式：先 `/transcribe`，再 `/polish`
+- `/polish` 支持 `task=polish` 和 `task=translate`
 
-### 4.2 GET /health
+当前 `/polish` 的语义不是“只接收音频”。
+它已经是：
 
-健康检查。客户端启动时调用，确认引擎已运行。
-
-**响应：**
-```json
-{
-  "status": "ok",
-  "version": "0.1.0"
-}
-```
-
-### 4.3 GET /contexts
-
-获取当前支持的场景列表和对应的 prompt 模板。
-
-### 4.4 POST /contexts
-
-用户自定义场景规则和 prompt 模板。
+- 文本输入时：只做 prompt 路由和 LLM 润色
+- 音频输入时：可选 STT 后再润色
 
 ---
 
-## 5. Prompt 架构设计
+## 6. Phase 1 已完成内容
 
-### 5.1 三层 Prompt 结构
+### 6.1 Engine
 
-每次调用 LLM，发送的 prompt 由三部分组装：
+已完成：
 
+- FastAPI 本地服务
+- 内存配置管理
+- provider-agnostic STT
+- provider-agnostic LLM
+- prompt 路由与上下文组装
+- `/health`、`/config`、`/transcribe`、`/polish`、`/contexts`
+- pytest 测试覆盖
+
+### 6.2 macOS Client
+
+已完成：
+
+- `EngineClient`
+- `EngineTranscriptionEngine`
+- 双模式 STT 选择
+- `PolishService`
+- `AppCoordinator` 主听写链路接入 Engine
+- Engine host/port 与 provider 设置
+- Keychain 存储 API key
+- app-level tests
+- settings UI smoke tests
+
+当前主链路是：
+
+```text
+按下热键录音
+  -> 本地 STT 或 Engine /transcribe
+  -> 客户端字典替换 / mention rewrite
+  -> Engine /polish
+  -> OutputManager 输出
 ```
-┌──────────────────────────────────────┐
-│  System Prompt（固定，所有场景共享）     │
-│  定义基本行为：去语气词、保留意图、格式化   │
-├──────────────────────────────────────┤
-│  Context Prompt（动态，根据场景切换）     │
-│  根据检测到的 app 选择对应场景模板        │
-├──────────────────────────────────────┤
-│  User Message（STT 原始转录文本）        │
-└──────────────────────────────────────┘
-```
 
-### 5.2 System Prompt 设计
+### 6.3 OpenSpec
 
-```
-你是一个语音转文字润色助手。用户会给你一段语音转录的原始文本。
-你的任务：
-1. 删除所有口头禅和语气词（嗯、啊、那个、就是说、然后、basically、you know、like...）
-2. 如果用户中途改口或重复，只保留最终意图
-3. 修正明显的语音识别错误
-4. 当用户明显在列举事项时（使用"第一、第二"、"首先、其次"、"一个是...另一个是..."等表述），自动转为编号列表
-5. 当用户说"包括"、"有以下几点"、"分别是"等词时，后续内容用列表格式呈现
-6. 不要改变用户的原始意思，不要添加用户没说的内容
-7. 直接输出润色后的文本，不要加任何解释或前缀
-```
+已完成：
 
-### 5.3 场景 Prompt 模板
+- Engine Phase 1 specs 归档
+- macOS Phase 1 specs 归档
+- 主线 `openspec/specs/` 已同步建立
 
-```yaml
-# defaults.yaml
-
-email:
-  match_rules:
-    - app_id: "com.apple.mail"
-    - app_id: "com.microsoft.Outlook"
-    - window_title_contains: "Gmail"
-  prompt: |
-    额外规则：
-    - 自动生成邮件格式：Subject / 称呼 / 正文 / 结尾
-    - 语气正式、专业
-    - 如果用户提到收件人名字，放在称呼里
-
-chat:
-  match_rules:
-    - app_id: "com.tencent.xinWeChat"
-    - app_id: "com.tinyspeck.slackmacgap"
-    - app_id: "com.hnc.Discord"
-    - app_id: "org.telegram.desktop"
-    - app_id: "com.apple.MobileSMS"
-    - app_id: "net.whatsapp.WhatsApp"
-  prompt: |
-    额外规则：
-    - 保持口语化，不要过度正式
-    - 简短直接，不需要复杂格式
-    - 可以保留轻微的语气（但去掉无意义口头禅）
-
-ai_chat:
-  match_rules:
-    - app_id: "com.openai.chat"
-    - window_title_contains: "ChatGPT"
-    - window_title_contains: "Claude"
-    - window_title_contains: "Cursor"
-  prompt: |
-    额外规则：
-    - 这是用户在跟 AI 助手对话的 prompt
-    - 保留用户的指令意图和结构
-    - 可以帮助组织成更清晰的指令格式
-    - 不要改变技术术语
-
-document:
-  match_rules:
-    - app_id: "com.apple.Notes"
-    - app_id: "notion.id"
-    - app_id: "md.obsidian"
-    - app_id: "com.microsoft.Word"
-  prompt: |
-    额外规则：
-    - 使用段落结构
-    - 重要概念加粗（Markdown 格式）
-    - 列表使用 Markdown 格式
-
-default:
-  prompt: |
-    额外规则：
-    - 输出清晰、通顺的文本
-    - 根据内容自行判断合适的格式
-```
+这意味着从现在开始，新工作不应继续修改旧 archived change，而应该新开 change。
 
 ---
 
-## 6. 开发流程（使用 Claude Code + OpenSpec）
+## 7. 当前仍未完成的工作
 
-### 6.1 环境准备
+虽然 Phase 1 已完成，但项目还远没到“发布完成”状态。
+
+当前最明显的缺口有：
+
+### 7.1 运行时 onboarding / 交付体验
+
+例如：
+
+- Engine 如何被用户启动、发现、重连
+- 首次配置如何更顺畅
+- Engine 离线时怎样给用户明确反馈
+- 最终发布时 Engine 和 macOS app 如何一起交付
+
+### 7.2 遗留客户端流程清理
+
+例如：
+
+- `AIEnhancementService` 仍残留在少数非主路径流程中
+- `quick capture note` 仍是 legacy 分支
+- 一些命名和旧设置项仍带有 Pindrop 语义
+
+### 7.3 用户可定制场景规则
+
+Engine 已有 `/contexts` 接口，但用户级自定义 UI 和完整工作流还没有打通。
+
+### 7.4 多平台客户端
+
+Windows / Linux 仍然只是未来方向，没有启动。
+
+---
+
+## 8. 建议的下一阶段路线图
+
+### 优先级 1：Runtime Onboarding / Distribution
+
+这是我当前最推荐的下一阶段。
+
+目标：
+
+- 让用户拿到仓库后，能更顺滑地把 Engine 和 macOS app 跑起来
+- 让“首次启动 / 配置 / 检查连接 / 故障反馈”变成明确产品流程
+
+建议作为新的 OpenSpec change，例如：
+
+- `phase2-runtime-onboarding`
+
+### 优先级 2：Legacy Flow Cleanup
+
+目标：
+
+- 处理 `AIEnhancementService` 遗留路径
+- 评估并迁移或删除 `quick capture note`
+- 进一步清理“Pindrop 旧语义”
+
+建议 change 名，例如：
+
+- `cleanup-legacy-client-flows`
+
+### 优先级 3：Custom Context Rules
+
+目标：
+
+- 让用户自定义 app 场景规则
+- 让用户调整 prompt 模板
+- 真正利用 `/contexts` 能力
+
+建议 change 名，例如：
+
+- `custom-scene-rules-and-prompts`
+
+---
+
+## 9. 现在如何继续使用 OpenSpec
+
+当前仓库状态：
+
+- `openspec/specs/` 是主线行为基线
+- `openspec/changes/archive/` 保存历史实现过程
+- 当前没有 active change
+
+因此后续流程应该是：
+
+1. 从 `main` 开新分支
+2. 先阅读相关主线 specs
+3. 新建一个新的 change
+4. 写 proposal / design / specs / tasks
+5. 实现并验证
+6. 完成后 archive
+
+推荐命令：
 
 ```bash
-# 1. 在 GitHub 上新建空仓库 open-typeless（MIT 协议）
-
-# 2. Clone 到本地
-git clone https://github.com/<你的用户名>/open-typeless.git
-cd open-typeless
-
-# 3. 搭建 monorepo 骨架
-mkdir -p engine/open_typeless/prompts
-mkdir -p engine/tests
-mkdir -p clients/macos
-mkdir -p clients/windows
-mkdir -p clients/linux
-mkdir -p docs
-
-# 4. 把 Pindrop 代码复制进来
-cd /tmp
-git clone https://github.com/watzon/pindrop.git
-cp -r /tmp/pindrop/* ~/open-typeless/clients/macos/
-cd ~/open-typeless
-
-# 5. 在 clients/macos/README.md 顶部添加致谢
-# "Based on [Pindrop](https://github.com/watzon/pindrop) by @watzon, MIT License"
-# 保留 clients/macos/LICENSE 文件
-
-# 6. 初始提交
-git add .
-git commit -m "Initial monorepo structure with Pindrop as macOS client base"
-git push
-
-# 7. 安装 OpenSpec
-npm install -g @fission-ai/openspec
-openspec init
-# 选择 Claude Code 作为 AI agent
-
-# 8. 让 AI 自动填写 project.md
-# 在 Claude Code 中：
-# "请读取整个仓库结构，特别是 clients/macos 下 Pindrop 的代码，
-#  帮我填写 openspec/project.md"
+openspec list --json
+openspec validate --specs
+openspec new change <change-name>
+openspec show <change-name>
+openspec validate <change-name>
+openspec archive <change-name>
 ```
 
-### 6.2 开发阶段一：核心引擎（约 1 周）
+原则：
 
-目标：引擎可以通过 CLI 和 HTTP 两种方式工作，接收音频文件 + 场景信息，返回润色后的文本。
+- 不要继续往 archived change 里加内容
+- 新需求、新范围、新清理工作都开新 change
 
-**Proposal 顺序：**
+---
 
-```
-# Proposal 1：引擎项目骨架
-/opsx:propose "[engine] Bootstrap Python project with pyproject.toml,
-HTTP server on localhost:19823, CLI entry point,
-and health check endpoint"
+## 10. 当前开发命令参考
 
-# Proposal 2：STT 调用层
-/opsx:propose "[engine] Add cloud STT service supporting
-Groq Whisper and Deepgram APIs with audio upload"
+### Engine
 
-# Proposal 3：LLM 调用层
-/opsx:propose "[engine] Add OpenRouter LLM integration
-with streaming support and configurable model selection"
+安装依赖后可运行：
 
-# Proposal 4：Prompt 路由系统
-/opsx:propose "[engine] Add context-aware prompt routing system
-with YAML-based template configuration and
-app context to scene mapping"
-
-# Proposal 5：组装完整管线
-/opsx:propose "[engine] Wire up the full polish pipeline:
-audio → STT → prompt assembly → LLM → response,
-exposed via POST /polish endpoint and CLI command"
-```
-
-**每个 Proposal 的操作流程：**
-1. 执行 `/opsx:propose "..."` → OpenSpec 生成 proposal + specs + design + tasks
-2. 审核生成的文档，确认技术方案合理
-3. 执行 `/opsx:apply` → AI agent 按 spec 实现代码
-4. 测试（用 curl 或 CLI 验证）
-5. 执行 `/opsx:archive` → 归档，进入下一个 proposal
-
-**阶段一完成标志：**
 ```bash
-# CLI 模式可用
-open-typeless polish recording.wav --context '{"app_id":"com.apple.mail"}'
-# 输出润色后的邮件格式文本
-
-# HTTP 模式可用
-curl -X POST http://localhost:19823/polish \
-  -H "Content-Type: application/json" \
-  -d '{"audio_base64":"...","context":{"app_id":"com.apple.mail"}}'
-# 返回润色后的 JSON 响应
+cd engine
+python -m pytest tests -v
+python -m open_typeless.cli serve
 ```
 
-### 6.3 开发阶段二：macOS 客户端改造（约 1 周）
+如果已经做了 editable install，也可以直接：
 
-目标：Pindrop 的录音完成后，不走本地 WhisperKit 转录，而是调用引擎 HTTP API，拿回润色结果粘贴到光标。
-
-**Proposal 顺序：**
-
-```
-# Proposal 6：引擎客户端
-/opsx:propose "[macos] Add EngineClient service that communicates
-with the Python engine via HTTP on localhost:19823,
-with health check and error handling"
-
-# Proposal 7：场景检测
-/opsx:propose "[macos] Add ActiveAppDetector that reads
-frontmost app bundle ID and window title via
-NSWorkspace and Accessibility API"
-
-# Proposal 8：替换转录流程
-/opsx:propose "[macos] Replace Pindrop's local WhisperKit
-transcription flow with engine-based polish:
-record audio → send to engine with app context →
-receive polished text → paste to cursor"
-
-# Proposal 9：设置界面
-/opsx:propose "[macos] Add settings view for OpenRouter API key,
-model selection, and custom prompt template editing"
+```bash
+open-typeless serve
 ```
 
-**阶段二完成标志：**
-- 按下快捷键 → 说话 → 松开 → 润色后的文字出现在光标位置
-- 在 Mail 中听写自动用邮件格式，在 Slack 中听写自动用口语风格
+### macOS Client
 
-### 6.4 开发阶段三：提升含金量（可选，约 1-2 周）
+快速测试：
 
-这些功能不影响核心使用，但会显著提升项目的技术深度。
-
+```bash
+cd clients/macos
+swift test
 ```
-# Level 2：风格记忆系统
-/opsx:propose "[engine] Add style memory system using SQLite
-to cache past polished results as few-shot examples,
-with vector similarity matching for example selection"
 
-# Level 3：边录边传优化
-/opsx:propose "[engine] Add WebSocket-based streaming audio upload
-to STT, reducing end-to-end latency by starting
-transcription while user is still speaking"
+完整 app-level tests：
 
-# Level 4：输入框上下文感知
-/opsx:propose "[macos] Read existing text in active input field
-via Accessibility API and include as context
-for more coherent continuation"
+```bash
+cd clients/macos
+xcodebuild test \
+  -project Pindrop.xcodeproj \
+  -scheme Pindrop \
+  -destination 'platform=macOS' \
+  -derivedDataPath /tmp/OpenTypelessDerivedData \
+  -clonedSourcePackagesDirPath /tmp/OpenTypelessSourcePackages \
+  -only-testing:PindropTests \
+  CODE_SIGNING_ALLOWED=NO \
+  CODE_SIGNING_REQUIRED=NO \
+  CODE_SIGN_IDENTITY='' \
+  DEVELOPMENT_TEAM=''
+```
+
+UI smoke tests：
+
+```bash
+cd clients/macos
+xcodebuild test \
+  -project Pindrop.xcodeproj \
+  -scheme Pindrop \
+  -testPlan UI \
+  -destination 'platform=macOS' \
+  -derivedDataPath /tmp/OpenTypelessUISignedDerivedData \
+  -clonedSourcePackagesDirPath /tmp/OpenTypelessSourcePackages \
+  CODE_SIGN_IDENTITY=- \
+  AD_HOC_CODE_SIGNING_ALLOWED=YES \
+  CODE_SIGNING_ALLOWED=YES \
+  CODE_SIGNING_REQUIRED=YES \
+  CODE_SIGN_STYLE=Manual \
+  DEVELOPMENT_TEAM=''
 ```
 
 ---
 
-## 7. 成本估算
+## 11. 成本与延迟的现实判断
 
-假设日均听写 30 分钟（约 900 分钟/月）：
+### 11.1 成本
 
-| 项目 | 成本 |
+当前不是“必须云端 STT + 云端 LLM”。
+
+实际可选模式有两类：
+
+- **本地 STT + 远程 LLM**
+  优点：STT 成本接近 0，只保留 LLM 成本
+- **远程 STT + 远程 LLM**
+  优点：本地模型和硬件负担更低，配置更统一
+
+如果使用：
+
+- Groq Whisper 做 STT
+- OpenRouter 上的低价模型做 polish
+
+那月成本仍然明显低于 Typeless 商业订阅。
+
+### 11.2 延迟
+
+当前 Phase 1 的主链路是**批处理模式**，不是流式边录边传。
+
+现实可接受的目标延迟大致是：
+
+| 阶段 | 估算 |
 |------|------|
-| STT（Groq Whisper） | ~$3.6/月 |
-| LLM（MiniMax M2.7 via OpenRouter） | ~$0.06/月 |
-| LLM（MiniMax M2.5 free） | $0/月 |
-| **总计（使用付费模型）** | **~$3.7/月** |
-| **总计（使用免费模型）** | **~$3.6/月** |
-| Typeless Pro 对比 | $12-30/月 |
+| 本地或远程 STT | 200-600ms |
+| localhost HTTP 与组装 | <10ms |
+| LLM polish | 150-300ms |
+| 输出 | <10ms |
+| **总计** | **约 400-900ms** |
+
+未来如果做 streaming STT，那是新的优化阶段，不是当前已实现能力。
 
 ---
 
-## 8. 延迟预期
+## 12. 当前结论
 
-目标：用户松开按键后 300-650ms 内文字出现。
+这个项目已经不再处于“从零开始搭骨架”的阶段。
 
-| 阶段 | 耗时 | 说明 |
-|------|------|------|
-| 音频上传到 STT | 50-100ms | 如果实现边录边传，大部分音频已在说话时处理完 |
-| STT 转录 | 200-500ms | Groq Whisper 对短音频约 200ms |
-| 本地 HTTP 通信 | <5ms | localhost 通信可忽略 |
-| LLM 润色（等完整结果） | 150-250ms | 短文本润色，选低延迟模型 |
-| 剪贴板粘贴 | <10ms | 一次性操作 |
-| **总计** | **~400-865ms** | |
+现在的真实阶段是：
 
+```text
+已完成：
+  Engine Phase 1
+  macOS Client Phase 1
+  OpenSpec baseline
 
+下一步重点：
+  运行时 onboarding / 交付体验
+  legacy 流程清理
+  用户自定义场景规则
+```
+
+如果要继续推进，请先从 `main` 开一个新的 OpenSpec change，而不是继续修改旧的 archived change。
