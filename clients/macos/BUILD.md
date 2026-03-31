@@ -2,7 +2,7 @@
 
 Complete guide for building, testing, and distributing the OpenTypeless macOS client.
 
-The Xcode target and some artifact names still use `Pindrop`. This document describes the current workflow in this repository, not upstream Pindrop release instructions.
+The Xcode target and some artifact names still use `OpenTypeless`. This document describes the current workflow in this repository, not upstream OpenTypeless release instructions.
 
 ## Prerequisites
 
@@ -49,7 +49,7 @@ just build-release      # Release build
 just export-app         # Archive + export Developer ID-signed app
 just dmg                # Export signed app + create DMG
 just dmg-self-signed    # Fallback self-signed DMG (only if Apple signing is unavailable)
-just appcast dist/Pindrop.dmg   # Generate appcast.xml for DMG
+just appcast dist/OpenTypeless.dmg   # Generate appcast.xml for DMG
 just release-notes 1.9.0        # Create draft release notes file
 just release 1.9.0      # Manual GitHub release workflow (local)
 ```
@@ -85,7 +85,7 @@ For creating a local Release build with Xcode-managed signing:
 just build-release
 ```
 
-Output: `DerivedData/Build/Products/Release/Pindrop.app`
+Output: `DerivedData/Build/Products/Release/OpenTypeless.app`
 
 ### 3. Export Signed App
 
@@ -99,7 +99,7 @@ This runs:
 1. `archive` - Create an Xcode archive
 2. `xcodebuild -exportArchive` - Export a Developer ID-signed app with automatic signing
 
-Output: `DerivedData/Build/Products/Release/Pindrop.app`
+Output: `DerivedData/Build/Products/Release/OpenTypeless.app`
 
 ### 4. DMG Creation
 
@@ -113,7 +113,7 @@ This runs:
 1. `export-app` - Export Developer ID-signed app
 2. `create-dmg.sh` - Package into DMG
 
-Output: `dist/Pindrop.dmg`
+Output: `dist/OpenTypeless.dmg`
 
 ### 5. Manual GitHub Release
 
@@ -129,21 +129,21 @@ This runs:
 3. Commit version bump (if needed)
 4. `just test`
 5. `just dmg`
-6. `just appcast dist/Pindrop.dmg`
+6. `just appcast dist/OpenTypeless.dmg`
 7. Create and push tag (`vX.Y.Z`)
 8. Create GitHub release with notes + DMG + `appcast.xml` via `gh`
 
 Optional notarization/stapling for signed distribution:
 ```bash
-just notarize dist/Pindrop.dmg
-just staple dist/Pindrop.dmg
+just notarize dist/OpenTypeless.dmg
+just staple dist/OpenTypeless.dmg
 ```
 
 ## Code Signing
 
 ### Setup
 
-1. Sign into Xcode with your Apple Developer account and enable automatic signing for the `Pindrop` target.
+1. Sign into Xcode with your Apple Developer account and enable automatic signing for the `OpenTypeless` target.
 
 2. Verify signing identities:
 ```bash
@@ -183,13 +183,13 @@ xcrun notarytool store-credentials "notarytool-password" \
 ### Notarize DMG
 
 ```bash
-just notarize dist/Pindrop.dmg
+just notarize dist/OpenTypeless.dmg
 ```
 
 ### Staple Ticket
 
 ```bash
-just staple dist/Pindrop.dmg
+just staple dist/OpenTypeless.dmg
 ```
 
 ## Version Management
@@ -225,8 +225,8 @@ just test-coverage
 
 ```bash
 xcodebuild test \
-  -project Pindrop.xcodeproj \
-  -scheme Pindrop \
+  -project OpenTypeless.xcodeproj \
+  -scheme OpenTypeless \
   -destination 'platform=macOS'
 ```
 
@@ -298,18 +298,18 @@ xcrun notarytool history --keychain-profile "notarytool-password"
 ## Directory Structure
 
 ```
-pindrop/
+opentypeless/
 ├── DerivedData/            # Local build + export output
-│   └── Build/Products/Release/Pindrop.app
+│   └── Build/Products/Release/OpenTypeless.app
 ├── dist/                   # Distribution files
-│   └── Pindrop.dmg
+│   └── OpenTypeless.dmg
 ├── scripts/                # Build scripts
 │   ├── create-dmg.sh
 │   ├── create-dmg-self-signed.sh
 │   ├── sign-app-bundle.sh
 │   └── ExportOptions.plist
 ├── justfile                # Build commands
-└── Pindrop.xcodeproj       # Xcode project
+└── OpenTypeless.xcodeproj       # Xcode project
 ```
 
 ## Advanced Usage

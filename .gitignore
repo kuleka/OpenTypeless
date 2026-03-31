@@ -25,5 +25,11 @@ uv.lock
 # Local test scripts (may contain API keys)
 test_manual*.sh
 
+# Xcode
+xcuserdata/
+DerivedData/
+*.xcuserstate
+clients/macos/.build/
+
 # OS
 .DS_Store

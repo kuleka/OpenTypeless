@@ -16,7 +16,7 @@ let package = Package(
     targets: [
         .target(
             name: "EngineCore",
-            path: "Pindrop/Services/EngineSupport"
+            path: "OpenTypeless/Services/EngineSupport"
         ),
         .testTarget(
             name: "EngineCoreTests",

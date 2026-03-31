@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-APP_NAME="Pindrop"
+APP_NAME="OpenTypeless"
 APP_BUNDLE="DerivedData/Build/Products/Release/${APP_NAME}.app"
 DMG_NAME="${APP_NAME}.dmg"
 DIST_DIR="dist"
@@ -25,7 +25,7 @@ else
     # Create DMG with custom background
     # Background image: 800x400 pixels (standard DMG size)
     # Window size must match background image dimensions
-    # Pindrop app position: left box center ~200,185
+    # OpenTypeless app position: left box center ~200,185
     # Applications shortcut position: right box center ~600,185
     create-dmg \
       --volname "${APP_NAME}" \

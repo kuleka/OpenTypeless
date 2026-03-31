@@ -4,21 +4,21 @@ Last updated: 2026-03-24
 
 ## Project Snapshot
 
-- App: `Pindrop` (menu bar macOS app, `LSUIElement` behavior)
+- App: `OpenTypeless` (menu bar macOS app, `LSUIElement` behavior)
 - Stack: Swift 5.9+, SwiftUI, SwiftData, Swift Testing, XCTest UI tests
 - Platform target: macOS 14+
-- Main dependency path: `Pindrop.xcodeproj` + SwiftPM
-- Entry points: `Pindrop/PindropApp.swift`, `Pindrop/AppCoordinator.swift`
+- Main dependency path: `OpenTypeless.xcodeproj` + SwiftPM
+- Entry points: `OpenTypeless/OpenTypelessApp.swift`, `OpenTypeless/AppCoordinator.swift`
 
 ## Source Layout
 
-- App code: `Pindrop/`
-- Services: `Pindrop/Services/`
-- UI: `Pindrop/UI/`
-- Persistence models: `Pindrop/Models/`
-- Utilities/logging: `Pindrop/Utils/`
-- Tests: `PindropTests/`
-- Test doubles: `PindropTests/TestHelpers/`
+- App code: `OpenTypeless/`
+- Services: `OpenTypeless/Services/`
+- UI: `OpenTypeless/UI/`
+- Persistence models: `OpenTypeless/Models/`
+- Utilities/logging: `OpenTypeless/Utils/`
+- Tests: `OpenTypelessTests/`
+- Test doubles: `OpenTypelessTests/TestHelpers/`
 - Build automation: `justfile`, `scripts/`, `.github/workflows/`
 
 ## Required Local Tooling
@@ -51,10 +51,10 @@ just xcode                 # open Xcode project
 Direct focused test commands:
 
 ```bash
-xcodebuild test -project Pindrop.xcodeproj -scheme Pindrop -testPlan Unit -destination 'platform=macOS'
-xcodebuild test -project Pindrop.xcodeproj -scheme Pindrop -testPlan UI -destination 'platform=macOS'
-xcodebuild test -project Pindrop.xcodeproj -scheme Pindrop -destination 'platform=macOS' -only-testing:PindropTests/AudioRecorderTests
-xcodebuild test -project Pindrop.xcodeproj -scheme Pindrop -destination 'platform=macOS' -only-testing:PindropTests/AudioRecorderTests/testStartRecordingRequestsPermission
+xcodebuild test -project OpenTypeless.xcodeproj -scheme OpenTypeless -testPlan Unit -destination 'platform=macOS'
+xcodebuild test -project OpenTypeless.xcodeproj -scheme OpenTypeless -testPlan UI -destination 'platform=macOS'
+xcodebuild test -project OpenTypeless.xcodeproj -scheme OpenTypeless -destination 'platform=macOS' -only-testing:OpenTypelessTests/AudioRecorderTests
+xcodebuild test -project OpenTypeless.xcodeproj -scheme OpenTypeless -destination 'platform=macOS' -only-testing:OpenTypelessTests/AudioRecorderTests/testStartRecordingRequestsPermission
 ```
 
 ## Coding Conventions
@@ -71,7 +71,7 @@ xcodebuild test -project Pindrop.xcodeproj -scheme Pindrop -destination 'platfor
 
 - Dependency injection via initializer arguments (avoid hidden globals)
 - Protocol abstractions for hardware/system boundaries
-- Example protocol seam: `AudioCaptureBackend` in `Pindrop/Services/AudioRecorder.swift`
+- Example protocol seam: `AudioCaptureBackend` in `OpenTypeless/Services/AudioRecorder.swift`
 - Keep async boundaries explicit (`async` / `async throws`)
 - Avoid fire-and-forget tasks unless they are UI/lifecycle orchestration
 
@@ -84,36 +84,36 @@ xcodebuild test -project Pindrop.xcodeproj -scheme Pindrop -destination 'platfor
 
 ## Localization
 
-- **String Catalogs**: `Pindrop/Localization/Localizable.xcstrings` (in-app copy) and `Pindrop/Localization/InfoPlist.xcstrings` (privacy strings, bundle display name). Both are in the app target’s **Copy Bundle Resources**.
-- **Runtime API**: `localized("English key", locale: locale)` in `Pindrop/AppLocalization.swift` resolves against `Bundle` for `SettingsStore.selectedAppLanguage` (see `MainWindow`, `SettingsWindow`, menu bar). The catalog **key is usually the English default string**; if you add UI text in Swift but **omit** the key from `Localizable.xcstrings`, every locale falls back to that English key and nothing appears translated.
+- **String Catalogs**: `OpenTypeless/Localization/Localizable.xcstrings` (in-app copy) and `OpenTypeless/Localization/InfoPlist.xcstrings` (privacy strings, bundle display name). Both are in the app target’s **Copy Bundle Resources**.
+- **Runtime API**: `localized("English key", locale: locale)` in `OpenTypeless/AppLocalization.swift` resolves against `Bundle` for `SettingsStore.selectedAppLanguage` (see `MainWindow`, `SettingsWindow`, menu bar). The catalog **key is usually the English default string**; if you add UI text in Swift but **omit** the key from `Localizable.xcstrings`, every locale falls back to that English key and nothing appears translated.
 - **New user-facing strings**: Add an entry to `Localizable.xcstrings` with **en** plus every shipped locale (**es**, **fr**, **de**, **zh-Hans**, **ja**, …). Xcode can export/import; hand-editing JSON is fine if you mirror an existing entry’s shape (`localizations` → `stringUnit` → `state` / `value`).
-- **New language (locale)**: Add the locale to **Project → Info → Localizations** (or `knownRegions` in `Pindrop.xcodeproj/project.pbxproj`), add `localizations` blocks for that code in both `.xcstrings` files, and if it should appear in **Settings → General → Language**, set `AppLanguage.isSelectable` in `SettingsStore.swift` and ensure `AppLanguage` has a matching `locale` identifier.
+- **New language (locale)**: Add the locale to **Project → Info → Localizations** (or `knownRegions` in `OpenTypeless.xcodeproj/project.pbxproj`), add `localizations` blocks for that code in both `.xcstrings` files, and if it should appear in **Settings → General → Language**, set `AppLanguage.isSelectable` in `SettingsStore.swift` and ensure `AppLanguage` has a matching `locale` identifier.
 - **Single “Language” setting**: The General settings picker drives **both** UI locale (`\.locale`) and transcription language (`TranscriptionOptions` / Whisper). Copy in that section should stay accurate when you change behavior.
 - **AI enhancement prompts**: Default prompts are defined in `SettingsStore.Defaults.aiEnhancementPrompt`. The prompt is sent to the Engine via `/polish`.
 - **Machine translation helper** (optional, not CI): `scripts/translate_xcstrings.py` fills a target locale from English using `deep-translator` and preserves `%@`, `%lld`, `${transcription}`, etc. Examples: `just translate-xcstrings ja`, `just translate-xcstrings-missing ja`, `just translate-infoplist ja`. Always **review** MT output before release.
 
 ## Logging
 
-- Use `Log` categories from `Pindrop/Utils/Logger.swift`
+- Use `Log` categories from `OpenTypeless/Utils/Logger.swift`
 - Categories include: `audio`, `transcription`, `model`, `output`, `hotkey`, `app`, `ui`, `update`, `aiEnhancement`, `context`
 - Log intent and failure context; avoid noisy per-frame spam
 
 ## SwiftData and Persistence
 
 - Models use SwiftData macros (`@Model`, `@Attribute(.unique)`)
-- Keep schema-related changes coordinated with schema files under `Pindrop/Models/`
+- Keep schema-related changes coordinated with schema files under `OpenTypeless/Models/`
 - Use in-memory model containers for unit tests when testing store logic
 
 ## Testing Conventions
 
 - Test files: `*Tests.swift`
-- Unit tests use Swift Testing with `@Suite` / `@Test`; macOS UI coverage stays in `PindropUITests/` with XCTest UI APIs
+- Unit tests use Swift Testing with `@Suite` / `@Test`; macOS UI coverage stays in `OpenTypelessUITests/` with XCTest UI APIs
 - Standard naming: `sut` for system under test
-- Prefer local fixture builders over shared `setUp` / `tearDown`; use `PindropTests/TestSupport.swift` for reusable test helpers
-- Use protocol mocks from `PindropTests/TestHelpers/` for hardware/system APIs
-- Integration tests are gated (see `PINDROP_RUN_INTEGRATION_TESTS` pattern)
-- Test mode signal exists in runtime (`PINDROP_TEST_MODE`)
-- UI tests run through `PINDROP_UI_TEST_MODE` and deterministic fixture surfaces in `Pindrop/AppTestMode.swift`
+- Prefer local fixture builders over shared `setUp` / `tearDown`; use `OpenTypelessTests/TestSupport.swift` for reusable test helpers
+- Use protocol mocks from `OpenTypelessTests/TestHelpers/` for hardware/system APIs
+- Integration tests are gated (see `OPENTYPELESS_RUN_INTEGRATION_TESTS` pattern)
+- Test mode signal exists in runtime (`OPENTYPELESS_TEST_MODE`)
+- UI tests run through `OPENTYPELESS_UI_TEST_MODE` and deterministic fixture surfaces in `OpenTypeless/AppTestMode.swift`
 
 ## Change Scope Rules
 
@@ -146,13 +146,13 @@ xcodebuild test -project Pindrop.xcodeproj -scheme Pindrop -destination 'platfor
 
 ## Important Paths
 
-- App lifecycle: `Pindrop/PindropApp.swift`
-- Service composition: `Pindrop/AppCoordinator.swift`
-- Settings and keychain: `Pindrop/Services/SettingsStore.swift`
-- Audio capture core: `Pindrop/Services/AudioRecorder.swift`
-- Transcription orchestration: `Pindrop/Services/TranscriptionService.swift`
-- Logging facade: `Pindrop/Utils/Logger.swift`
-- Localization: `Pindrop/AppLocalization.swift`, `Pindrop/Localization/Localizable.xcstrings`, `Pindrop/Localization/InfoPlist.xcstrings`
+- App lifecycle: `OpenTypeless/OpenTypelessApp.swift`
+- Service composition: `OpenTypeless/AppCoordinator.swift`
+- Settings and keychain: `OpenTypeless/Services/SettingsStore.swift`
+- Audio capture core: `OpenTypeless/Services/AudioRecorder.swift`
+- Transcription orchestration: `OpenTypeless/Services/TranscriptionService.swift`
+- Logging facade: `OpenTypeless/Utils/Logger.swift`
+- Localization: `OpenTypeless/AppLocalization.swift`, `OpenTypeless/Localization/Localizable.xcstrings`, `OpenTypeless/Localization/InfoPlist.xcstrings`
 - MT helper (optional): `scripts/translate_xcstrings.py`
 - Build recipes: `justfile`
 - Contributor docs: `README.md`, `CONTRIBUTING.md`, `BUILD.md`

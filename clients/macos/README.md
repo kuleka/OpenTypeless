@@ -1,14 +1,14 @@
 # OpenTypeless macOS Client
 
-> Native macOS client for OpenTypeless, based on the upstream Pindrop app.
+> Native macOS client for OpenTypeless, based on the upstream OpenTypeless app.
 
-This directory contains the Swift macOS client used by OpenTypeless. The codebase started from [Pindrop](https://github.com/watzon/pindrop) and is being adapted into a thin client for the local OpenTypeless Engine.
+This directory contains the Swift macOS client used by OpenTypeless. The codebase started from [OpenTypeless](https://github.com/kuleka/OpenTypeless) and is being adapted into a thin client for the local OpenTypeless Engine.
 
-This README describes the current OpenTypeless client state. It is not a mirror of upstream Pindrop product docs.
+This README describes the current OpenTypeless client state. It is not a mirror of upstream OpenTypeless product docs.
 
 ## Origin And Scope
 
-- Upstream foundation: Pindrop
+- Upstream foundation: OpenTypeless
 - Current product direction: OpenTypeless
 - Current goal: keep the native macOS shell while moving STT and polish responsibilities behind the local Engine HTTP boundary
 
@@ -50,15 +50,15 @@ record audio
 
 Important components already in the repo:
 
-- `Pindrop/Services/EngineSupport/EngineClient.swift`
-- `Pindrop/Services/Transcription/EngineTranscriptionEngine.swift`
-- `Pindrop/Services/TranscriptionService.swift`
-- `Pindrop/Services/PolishService.swift`
+- `OpenTypeless/Services/EngineSupport/EngineClient.swift`
+- `OpenTypeless/Services/Transcription/EngineTranscriptionEngine.swift`
+- `OpenTypeless/Services/TranscriptionService.swift`
+- `OpenTypeless/Services/PolishService.swift`
 
 Important migration note:
 
 - `AIEnhancementService` and the Notes subsystem have been fully removed in the legacy cleanup pass.
-- Xcode targets and many path names still use `Pindrop` for continuity.
+- Xcode targets and many path names still use `OpenTypeless` for continuity.
 
 ## Engine Runtime Readiness
 
@@ -94,16 +94,16 @@ Clone your fork or local checkout of OpenTypeless, then work inside the macOS cl
 
 ```bash
 cd OpenTypeless/clients/macos
-open Pindrop.xcodeproj
+open OpenTypeless.xcodeproj
 ```
 
 You can also build from the command line:
 
 ```bash
-xcodebuild -project Pindrop.xcodeproj -scheme Pindrop -destination 'platform=macOS' build
+xcodebuild -project OpenTypeless.xcodeproj -scheme OpenTypeless -destination 'platform=macOS' build
 ```
 
-The app target is still named `Pindrop`.
+The app target is still named `OpenTypeless`.
 
 ## Recommended Test Commands
 
@@ -121,12 +121,12 @@ Full macOS app tests:
 ```bash
 cd clients/macos
 xcodebuild test \
-  -project Pindrop.xcodeproj \
-  -scheme Pindrop \
+  -project OpenTypeless.xcodeproj \
+  -scheme OpenTypeless \
   -destination 'platform=macOS' \
   -derivedDataPath /tmp/OpenTypelessDerivedData \
   -clonedSourcePackagesDirPath /tmp/OpenTypelessSourcePackages \
-  -only-testing:PindropTests \
+  -only-testing:OpenTypelessTests \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO \
   CODE_SIGN_IDENTITY='' \
@@ -140,8 +140,8 @@ UI smoke tests:
 ```bash
 cd clients/macos
 xcodebuild test \
-  -project Pindrop.xcodeproj \
-  -scheme Pindrop \
+  -project OpenTypeless.xcodeproj \
+  -scheme OpenTypeless \
   -testPlan UI \
   -destination 'platform=macOS' \
   -derivedDataPath /tmp/OpenTypelessUISignedDerivedData \
@@ -172,7 +172,7 @@ just clean
 just --list
 ```
 
-Maintainer-oriented release helpers still exist because the client inherited Pindrop's packaging flow:
+Maintainer-oriented release helpers still exist because the client inherited OpenTypeless's packaging flow:
 
 ```bash
 just export-app
@@ -181,7 +181,7 @@ just release-notes 1.9.0
 just release 1.9.0
 ```
 
-Treat these as OpenTypeless maintainer workflows for inherited packaging infrastructure, not as evidence that upstream Pindrop releases are current OpenTypeless releases.
+Treat these as OpenTypeless maintainer workflows for inherited packaging infrastructure, not as evidence that upstream OpenTypeless releases are current OpenTypeless releases.
 
 ## First Launch Notes
 
@@ -198,11 +198,11 @@ The main dictation path is Engine-backed now. A few legacy auxiliary flows still
 
 ```text
 clients/macos/
-├── Pindrop/                     # Main app sources
-├── PindropTests/                # App-level tests
-├── PindropUITests/              # UI tests
+├── OpenTypeless/                     # Main app sources
+├── OpenTypelessTests/                # App-level tests
+├── OpenTypelessUITests/              # UI tests
 ├── Tests/EngineCoreTests/       # Lightweight Engine support tests
-├── Pindrop.xcodeproj            # Xcode project
+├── OpenTypeless.xcodeproj            # Xcode project
 ├── Package.swift                # Local package for Engine-core test isolation
 ├── justfile                     # Developer task runner
 └── BUILD.md / CONTRIBUTING.md   # Local build and contribution docs
@@ -210,7 +210,7 @@ clients/macos/
 
 ## License And Attribution
 
-The macOS client is based on upstream Pindrop and remains MIT licensed.
+The macOS client is based on upstream OpenTypeless and remains MIT licensed.
 
 - See [LICENSE](./LICENSE)
 - Keep upstream attribution intact when changing this directory

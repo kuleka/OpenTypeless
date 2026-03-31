@@ -2,7 +2,7 @@
 
 This document describes the inherited Sparkle-based release process for the OpenTypeless macOS client.
 
-The Xcode target, app bundle, and some distribution artifacts are still named `Pindrop`. Treat those names as current implementation details inside this repo.
+The Xcode target, app bundle, and some distribution artifacts are still named `OpenTypeless`. Treat those names as current implementation details inside this repo.
 
 ## EdDSA Signing Keys
 
@@ -10,7 +10,7 @@ The current macOS client target uses [Sparkle](https://sparkle-project.org/) for
 
 ### Key Storage
 
-- **Public Key**: Embedded in `Pindrop/Info.plist` as `SUPublicEDKey`
+- **Public Key**: Embedded in `OpenTypeless/Info.plist` as `SUPublicEDKey`
 - **Private Key**: Stored securely in the macOS Keychain (automatically managed by Sparkle)
 
 **IMPORTANT**: The private key is NEVER committed to the repository. It is stored only in the macOS Keychain of the machine that generated it.
@@ -21,7 +21,7 @@ The current macOS client target uses [Sparkle](https://sparkle-project.org/) for
 TCU0MwULuIK6y0ubIossVr+61PGh/wHZfFrRFc9F2Is=
 ```
 
-This key is currently configured in `Pindrop/Info.plist`:
+This key is currently configured in `OpenTypeless/Info.plist`:
 
 ```xml
 <key>SUPublicEDKey</key>
@@ -48,7 +48,7 @@ If you need to regenerate the signing keys (e.g., if the private key is lost):
    - Store the private key in your macOS Keychain
    - Output the public key to stdout
 
-4. Update `Pindrop/Info.plist` with the new public key:
+4. Update `OpenTypeless/Info.plist` with the new public key:
    ```xml
    <key>SUPublicEDKey</key>
    <string>YOUR_NEW_PUBLIC_KEY_HERE</string>
@@ -76,13 +76,13 @@ This will:
 - Clean build artifacts
 - Build the release version
 - Sign the app with your Developer ID
-- Create a DMG in `dist/Pindrop.dmg`
+- Create a DMG in `dist/OpenTypeless.dmg`
 - Notarize the DMG with Apple
 - Staple the notarization ticket to the DMG
 - Generate `appcast.xml` from the final stapled DMG
 
 3. **Upload the release**:
-- Upload `dist/Pindrop.dmg` to GitHub Releases
+- Upload `dist/OpenTypeless.dmg` to GitHub Releases
 - Upload `appcast.xml` as a GitHub Release asset (or host it at your feed URL)
 
 4. **Tag the release**:
@@ -110,7 +110,7 @@ The `just appcast` command automates the appcast generation process:
 
 ```bash
 # Generate appcast for the default DMG location
-just appcast dist/Pindrop.dmg
+just appcast dist/OpenTypeless.dmg
 
 # The appcast.xml will be created in the current directory
 ```
@@ -123,7 +123,7 @@ The generated `appcast.xml` follows Sparkle's RSS format:
 <?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
   <channel>
-    <title>Pindrop Updates</title>
+    <title>OpenTypeless Updates</title>
     <item>
       <title>Version 1.0.0</title>
       <sparkle:version>100</sparkle:version>
@@ -145,7 +145,7 @@ If you need to manually edit `appcast.xml`:
 2. Update version numbers, release notes, and download URL
 3. Generate the EdDSA signature using:
    ```bash
-   ./bin/sign_update /path/to/Pindrop.dmg
+   ./bin/sign_update /path/to/OpenTypeless.dmg
    ```
 4. Add the signature to the `<enclosure>` element
 
@@ -156,7 +156,7 @@ The appcast can be hosted:
 - **GitHub Releases**: Upload as a release asset
 - **Custom server**: Any HTTPS URL accessible to users
 
-Update `SUFeedURL` in `Pindrop/Info.plist` to point to your hosted appcast.
+Update `SUFeedURL` in `OpenTypeless/Info.plist` to point to your hosted appcast.
 
 ## Security Notes
 

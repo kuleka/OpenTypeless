@@ -2,7 +2,7 @@
 
 Thank you for your interest in contributing to the OpenTypeless macOS client. Whether you're fixing a bug, adding a feature, or improving documentation, your help is welcome and appreciated.
 
-This client is a macOS menu bar dictation app built with Swift and SwiftUI. It still contains the original Pindrop foundation, but the main dictation flow now runs as the OpenTypeless macOS client. The repo currently uses pinned Swift package dependencies including WhisperKit, FluidAudio, and Sparkle.
+This client is a macOS menu bar dictation app built with Swift and SwiftUI. It still contains the original OpenTypeless foundation, but the main dictation flow now runs as the OpenTypeless macOS client. The repo currently uses pinned Swift package dependencies including WhisperKit, FluidAudio, and Sparkle.
 
 This repository is also the current OpenTypeless macOS client. Phase 1 of the `OpenTypeless Client + Engine` split is complete, while a few auxiliary legacy flows remain in the codebase.
 
@@ -64,7 +64,7 @@ brew install swiftlint swiftformat
 4. **Open in Xcode** (if you prefer the IDE):
 
    ```bash
-   open Pindrop.xcodeproj
+   open OpenTypeless.xcodeproj
    ```
 
 For the full build system reference (release builds, DMGs, code signing, notarization), see [BUILD.md](BUILD.md).
@@ -75,7 +75,7 @@ For the full build system reference (release builds, DMGs, code signing, notariz
 
 When working in this repo, assume three layers are currently coexisting:
 
-- original local Pindrop-era transcription and enhancement components
+- original local OpenTypeless-era transcription and enhancement components
 - the new Engine HTTP integration pieces such as `EngineClient`, `EngineTranscriptionEngine`, and `PolishService`
 - a mostly migrated app orchestration layer with a few remaining legacy auxiliary paths
 
@@ -160,7 +160,7 @@ Every Swift file starts with:
 ```swift
 //
 //  FileName.swift
-//  Pindrop
+//  OpenTypeless
 //
 //  Created on YYYY-MM-DD.
 //
@@ -253,12 +253,12 @@ just test-integration     # Integration suite only
 just test-all             # Both suites
 
 # Run a specific test class:
-xcodebuild test -scheme Pindrop -destination 'platform=macOS' \
-    -only-testing:PindropTests/AudioRecorderTests
+xcodebuild test -scheme OpenTypeless -destination 'platform=macOS' \
+    -only-testing:OpenTypelessTests/AudioRecorderTests
 
 # Run a single test:
-xcodebuild test -scheme Pindrop -destination 'platform=macOS' \
-    -only-testing:PindropTests/AudioRecorderTests/testStartRecordingRequestsPermission
+xcodebuild test -scheme OpenTypeless -destination 'platform=macOS' \
+    -only-testing:OpenTypelessTests/AudioRecorderTests/testStartRecordingRequestsPermission
 ```
 
 For current OpenTypeless work, these two direct commands are especially useful:
@@ -273,12 +273,12 @@ This runs the lightweight `EngineCore` package tests for the shared Engine suppo
 ```bash
 cd clients/macos
 xcodebuild test \
-  -project Pindrop.xcodeproj \
-  -scheme Pindrop \
+  -project OpenTypeless.xcodeproj \
+  -scheme OpenTypeless \
   -destination 'platform=macOS' \
   -derivedDataPath /tmp/OpenTypelessDerivedData \
   -clonedSourcePackagesDirPath /tmp/OpenTypelessSourcePackages \
-  -only-testing:PindropTests \
+  -only-testing:OpenTypelessTests \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO \
   CODE_SIGN_IDENTITY='' \
@@ -292,13 +292,13 @@ For runtime onboarding work, these focused tests are useful:
 ```bash
 cd clients/macos
 xcodebuild test \
-  -project Pindrop.xcodeproj \
-  -scheme Pindrop \
+  -project OpenTypeless.xcodeproj \
+  -scheme OpenTypeless \
   -destination 'platform=macOS' \
   -derivedDataPath /tmp/OpenTypelessDerivedData \
   -clonedSourcePackagesDirPath /tmp/OpenTypelessSourcePackages \
-  -only-testing:PindropTests/SettingsStoreTests \
-  -only-testing:PindropTests/AppCoordinatorEnginePipelineTests \
+  -only-testing:OpenTypelessTests/SettingsStoreTests \
+  -only-testing:OpenTypelessTests/AppCoordinatorEnginePipelineTests \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO \
   CODE_SIGN_IDENTITY='' \
@@ -309,7 +309,7 @@ This covers runtime state evaluation, explicit recheck, and mode-aware fallback 
 
 ### Test Isolation
 
-Tests are isolated from user settings. The test plans set `PINDROP_TEST_MODE=1`, which causes `SettingsStore` to use test-only `@AppStorage` and Keychain backends. You don't need to do anything special; just make sure new settings-dependent code respects this flag.
+Tests are isolated from user settings. The test plans set `OPENTYPELESS_TEST_MODE=1`, which causes `SettingsStore` to use test-only `@AppStorage` and Keychain backends. You don't need to do anything special; just make sure new settings-dependent code respects this flag.
 
 ### Writing Tests for New Features
 
@@ -361,8 +361,8 @@ Tests are isolated from user settings. The test plans set `PINDROP_TEST_MODE=1`,
 ### Project Structure
 
 ```
-Pindrop/
-├── PindropApp.swift        # @main entry point + AppDelegate
+OpenTypeless/
+├── OpenTypelessApp.swift        # @main entry point + AppDelegate
 ├── AppCoordinator.swift    # Central service wiring + lifecycle
 ├── Services/               # 9 service modules (all non-UI logic)
 ├── UI/                     # StatusBar, Settings, History, FloatingIndicator
@@ -397,7 +397,7 @@ Legacy auxiliary paths (quick capture note, AIEnhancementService, Notes) have be
 2. Follow the `@MainActor final class` pattern (unless threading constraints prevent it).
 3. Define a nested error enum.
 4. Wire it through `AppCoordinator`.
-5. Add tests in `PindropTests/` using the existing patterns.
+5. Add tests in `OpenTypelessTests/` using the existing patterns.
 6. If the service depends on hardware, define a protocol and provide a mock in `TestHelpers/`.
 
 ## Pull Request Checklist

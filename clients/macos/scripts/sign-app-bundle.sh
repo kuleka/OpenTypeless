@@ -5,7 +5,7 @@ set -euo pipefail
 # consistently track bundle identity across launches.
 #
 # Usage:
-#   ./scripts/sign-app-bundle.sh /path/to/Pindrop.app [identity]
+#   ./scripts/sign-app-bundle.sh /path/to/OpenTypeless.app [identity]
 #
 # identity defaults to "-" (ad-hoc)
 
@@ -14,7 +14,7 @@ SIGN_IDENTITY="${2:--}"
 
 if [ -z "${APP_BUNDLE}" ]; then
     echo "❌ Missing app bundle path."
-    echo "Usage: $0 /path/to/Pindrop.app [identity]"
+    echo "Usage: $0 /path/to/OpenTypeless.app [identity]"
     exit 1
 fi
 

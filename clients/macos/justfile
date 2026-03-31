@@ -1,4 +1,4 @@
-# Pindrop Build System
+# OpenTypeless Build System
 # Requires: Xcode, create-dmg (brew install create-dmg)
 
 # Default recipe - show available commands
@@ -6,15 +6,15 @@ default:
     @just --list
 
 # Variables
-app_name := "Pindrop"
-scheme := "Pindrop"
+app_name := "OpenTypeless"
+scheme := "OpenTypeless"
 build_dir := "DerivedData/Build/Products"
 release_dir := build_dir / "Release"
 app_bundle := release_dir / app_name + ".app"
 dmg_dir := "dist"
 
 # Build configuration
-xcode_project := "Pindrop.xcodeproj"
+xcode_project := "OpenTypeless.xcodeproj"
 
 # Clean all build artifacts
 clean:
@@ -148,7 +148,7 @@ translate-xcstrings-missing lang:
     @python3 scripts/translate_xcstrings.py --target "{{lang}}" --only-missing
 
 translate-infoplist lang:
-    @python3 scripts/translate_xcstrings.py --file Pindrop/Localization/InfoPlist.xcstrings --target "{{lang}}" --only-missing
+    @python3 scripts/translate_xcstrings.py --file OpenTypeless/Localization/InfoPlist.xcstrings --target "{{lang}}" --only-missing
 
 # Type check only (no build)
 typecheck:
@@ -268,7 +268,7 @@ release version:
 		exit 1
 	fi
 	
-	echo "🚀 Releasing Pindrop ${TAG}"
+	echo "🚀 Releasing OpenTypeless ${TAG}"
 	echo ""
 	
 	# Check for uncommitted changes
@@ -313,8 +313,8 @@ release version:
 	fi
 	
 	# Get current version
-	CURRENT_VERSION=$(grep 'MARKETING_VERSION = ' Pindrop.xcodeproj/project.pbxproj | head -1 | sed 's/.*= \(.*\);/\1/')
-	CURRENT_BUILD=$(grep 'CURRENT_PROJECT_VERSION = ' Pindrop.xcodeproj/project.pbxproj | head -1 | sed 's/.*= \(.*\);/\1/')
+	CURRENT_VERSION=$(grep 'MARKETING_VERSION = ' OpenTypeless.xcodeproj/project.pbxproj | head -1 | sed 's/.*= \(.*\);/\1/')
+	CURRENT_BUILD=$(grep 'CURRENT_PROJECT_VERSION = ' OpenTypeless.xcodeproj/project.pbxproj | head -1 | sed 's/.*= \(.*\);/\1/')
 	echo "📋 Current version: ${CURRENT_VERSION}"
 	echo "📋 Current build: ${CURRENT_BUILD}"
 	echo "📋 New version: ${VERSION}"
@@ -329,12 +329,12 @@ release version:
 		
 		# Update MARKETING_VERSION and CURRENT_PROJECT_VERSION in project.pbxproj
 		echo "📝 Updating version and build number in Xcode project..."
-		sed -i '' "s/MARKETING_VERSION = ${CURRENT_VERSION};/MARKETING_VERSION = ${VERSION};/g" Pindrop.xcodeproj/project.pbxproj
-		sed -i '' "s/CURRENT_PROJECT_VERSION = ${CURRENT_BUILD};/CURRENT_PROJECT_VERSION = ${NEXT_BUILD};/g" Pindrop.xcodeproj/project.pbxproj
+		sed -i '' "s/MARKETING_VERSION = ${CURRENT_VERSION};/MARKETING_VERSION = ${VERSION};/g" OpenTypeless.xcodeproj/project.pbxproj
+		sed -i '' "s/CURRENT_PROJECT_VERSION = ${CURRENT_BUILD};/CURRENT_PROJECT_VERSION = ${NEXT_BUILD};/g" OpenTypeless.xcodeproj/project.pbxproj
 		
 		# Verify the changes
-		NEW_VERSION=$(grep 'MARKETING_VERSION = ' Pindrop.xcodeproj/project.pbxproj | head -1 | sed 's/.*= \(.*\);/\1/')
-		NEW_BUILD=$(grep 'CURRENT_PROJECT_VERSION = ' Pindrop.xcodeproj/project.pbxproj | head -1 | sed 's/.*= \(.*\);/\1/')
+		NEW_VERSION=$(grep 'MARKETING_VERSION = ' OpenTypeless.xcodeproj/project.pbxproj | head -1 | sed 's/.*= \(.*\);/\1/')
+		NEW_BUILD=$(grep 'CURRENT_PROJECT_VERSION = ' OpenTypeless.xcodeproj/project.pbxproj | head -1 | sed 's/.*= \(.*\);/\1/')
 		if [ "$NEW_VERSION" != "$VERSION" ]; then
 			echo "❌ Failed to update version"
 			exit 1
@@ -347,7 +347,7 @@ release version:
 		
 		# Commit the version bump
 		echo "📦 Committing version bump..."
-		git add Pindrop.xcodeproj/project.pbxproj
+		git add OpenTypeless.xcodeproj/project.pbxproj
 		git commit -m "chore: bump version to ${VERSION} (build ${NEXT_BUILD})"
 	fi
 
@@ -391,7 +391,7 @@ release version:
 	# Step 8: Create GitHub release and attach assets
 	echo "📤 Creating GitHub release with DMG + appcast + notes..."
 	gh release create "${TAG}" "${DMG_PATH}" "${APPCAST_PATH}" \
-		--title "Pindrop ${TAG}" \
+		--title "OpenTypeless ${TAG}" \
 		--notes-file "${NOTES_PATH}"
 	
 	echo ""
@@ -438,7 +438,7 @@ release-notes version:
 	COMMITS=$(git log --no-merges --pretty=format:'- %s' "${PREV_TAG:+${PREV_TAG}..HEAD}" | head -8 || true)
 	COMPARE_URL=""
 	if [ -n "${PREV_TAG}" ]; then
-		COMPARE_URL="https://github.com/watzon/pindrop/compare/${PREV_TAG}...${TAG}"
+		COMPARE_URL="https://github.com/kuleka/OpenTypeless/compare/${PREV_TAG}...${TAG}"
 	fi
 
 	printf '%s\n' \
@@ -463,7 +463,7 @@ release-notes version:
 	echo "✏️  Review/edit the file, remove TODO markers, then run: just release ${VERSION}"
 
 # Generate appcast.xml for Sparkle updates
-# Usage: just appcast dist/Pindrop.dmg
+# Usage: just appcast dist/OpenTypeless.dmg
 appcast dmg_path:
 	@echo "📡 Generating appcast.xml..."
 	@if [ ! -f "{{dmg_path}}" ]; then \
@@ -482,8 +482,8 @@ appcast dmg_path:
 		rm -rf /tmp/Sparkle.tar.xz /tmp/sparkle-extract; \
 		echo "✅ Sparkle tools downloaded to bin/"; \
 	fi
-	@TAG_VERSION="v$(grep 'MARKETING_VERSION = ' Pindrop.xcodeproj/project.pbxproj | head -1 | sed 's/.*= \(.*\);/\1/')"; \
-	DOWNLOAD_PREFIX="https://github.com/watzon/pindrop/releases/download/${TAG_VERSION}/"; \
+	@TAG_VERSION="v$(grep 'MARKETING_VERSION = ' OpenTypeless.xcodeproj/project.pbxproj | head -1 | sed 's/.*= \(.*\);/\1/')"; \
+	DOWNLOAD_PREFIX="https://github.com/kuleka/OpenTypeless/releases/download/${TAG_VERSION}/"; \
 	echo "🔏 Signing DMG and generating appcast for ${TAG_VERSION}..."; \
 	echo "🔗 Download prefix: ${DOWNLOAD_PREFIX}"; \
 	mkdir -p updates; \

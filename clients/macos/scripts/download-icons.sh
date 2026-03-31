@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Download Lucide and brand icons for Pindrop
+# Download Lucide and brand icons for OpenTypeless
 # Creates proper .imageset folders with Contents.json
 
-ASSETS_DIR="Pindrop/Assets.xcassets/Icons"
+ASSETS_DIR="OpenTypeless/Assets.xcassets/Icons"
 
 # Icon definitions: "icon-id:asset-name"
 ICONS=(

@@ -1,11 +1,11 @@
 #!/bin/bash
 set -e
 
-# Pindrop DMG Creation Script
+# OpenTypeless DMG Creation Script
 # Creates a distributable DMG with custom background and layout
 
 # Configuration
-APP_NAME="Pindrop"
+APP_NAME="OpenTypeless"
 APP_BUNDLE="DerivedData/Build/Products/Release/${APP_NAME}.app"
 DMG_DIR="dist"
 DMG_NAME="${APP_NAME}.dmg"

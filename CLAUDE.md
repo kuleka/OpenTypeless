@@ -9,7 +9,7 @@ OpenTypeless 是一个**开源语音输入法**，核心功能：用户按快捷
 
 架构分两部分：
 - **Engine**（Python FastAPI）：本地 HTTP 服务，处理 STT + LLM 管线
-- **Client**（macOS Swift，基于 Pindrop）：录音、获取 app 上下文、调用 Engine、粘贴结果
+- **Client**（macOS Swift）：录音、获取 app 上下文、调用 Engine、粘贴结果
 
 ## 仓库结构
 
@@ -21,7 +21,7 @@ OpenTypeless/
 ├── docs/
 │   └── api-contract.md   ← Engine ↔ Client 接口契约（核心文档）
 ├── clients/
-│   └── macos/            ← Pindrop 源码（macOS 客户端基座）
+│   └── macos/            ← macOS 客户端（原 Pindrop，已重命名为 OpenTypeless）
 ├── engine/               ← Python Engine（Phase 1 已完成）
 └── openspec/             ← OpenSpec 规格文件
 ```
@@ -95,7 +95,7 @@ OpenTypeless/
 
 ### Phase 1 — ✅ 已完成
 - [x] 项目初始化（README、MIT LICENSE）
-- [x] Pindrop 源码导入到 `clients/macos/`
+- [x] Pindrop 源码导入到 `clients/macos/`（已重命名为 OpenTypeless）
 - [x] Engine ↔ Client API 接口契约文档（v1.4）
 - [x] Engine 开发（FastAPI，6 个端点，68 个测试）— PR #2
 - [x] Engine 升级到 API v1.4（/transcribe、双模式 /polish、stt 可选）
@@ -135,8 +135,8 @@ OpenTypeless/
 - 启动服务：`cd engine && .venv/bin/python -m open_typeless.cli serve`
 
 ### Client 开发
-- 代码在 `clients/macos/Pindrop/`
-- 用 Xcode 打开 `clients/macos/Pindrop.xcodeproj`
+- 代码在 `clients/macos/OpenTypeless/`
+- 用 Xcode 打开 `clients/macos/OpenTypeless.xcodeproj`
 
 ## 运行时行为速查
 

@@ -2,7 +2,7 @@
 
 This directory contains scripts for building and packaging the OpenTypeless macOS client.
 
-Some scripts and artifact names still use `Pindrop` because the current Xcode target and packaging flow have not been renamed yet.
+Some scripts and artifact names still use `OpenTypeless` because the current Xcode target and packaging flow have not been renamed yet.
 
 ## Scripts
 
@@ -12,7 +12,7 @@ Creates a distributable DMG file for macOS.
 
 **Requirements:**
 - `create-dmg` (install via `brew install create-dmg`)
-- Signed export of `Pindrop.app` in `DerivedData/Build/Products/Release/`
+- Signed export of `OpenTypeless.app` in `DerivedData/Build/Products/Release/`
 
 **Usage:**
 ```bash
@@ -25,7 +25,7 @@ just dmg
 ```
 
 **Output:**
-- DMG file in `dist/Pindrop.dmg`
+- DMG file in `dist/OpenTypeless.dmg`
 
 ### `download-icons.sh`
 
@@ -42,7 +42,7 @@ Configuration file for Xcode archive exports. Used when creating signed builds f
 
 **Setup:**
 1. Sign into Xcode with your Apple Developer account
-2. Enable automatic signing for the `Pindrop` target
+2. Enable automatic signing for the `OpenTypeless` target
 3. Ensure a Developer ID Application certificate is available for export
 
 ## Build Workflow
@@ -83,8 +83,8 @@ This will:
 ### Notarization (requires Apple Developer account)
 
 ```bash
-just notarize dist/Pindrop.dmg
-just staple dist/Pindrop.dmg
+just notarize dist/OpenTypeless.dmg
+just staple dist/OpenTypeless.dmg
 ```
 
 ## Directory Structure
