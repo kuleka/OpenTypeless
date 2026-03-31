@@ -184,7 +184,6 @@ struct EngineE2ETests {
         #expect(polishResp.rawTranscript == "test input")
         #expect(polishResp.contextDetected == "email")
         #expect(polishResp.task == "polish")
-        #expect(polishResp.sttMs == 0) // text mode, no STT
         #expect(polishResp.llmMs >= 0)
         #expect(polishResp.totalMs >= 0)
     }

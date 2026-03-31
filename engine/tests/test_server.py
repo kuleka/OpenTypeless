@@ -1,12 +1,13 @@
 """Integration tests for the HTTP server using FastAPI TestClient."""
 
-import base64
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
+from open_typeless.llm import LLMError
 from open_typeless.server import app
+from open_typeless.stt import STTError
 
 client = TestClient(app)
 
@@ -22,9 +23,6 @@ _valid_config = {
         "model": "test-model",
     },
 }
-
-_valid_audio = base64.b64encode(b"fake-wav-audio-data").decode()
-
 
 @pytest.fixture(autouse=True)
 def _reset_config(monkeypatch):
@@ -94,82 +92,20 @@ def test_get_config_configured() -> None:
 def test_polish_not_configured() -> None:
     resp = client.post(
         "/polish",
-        json={"audio_base64": _valid_audio, "context": {"app_id": "com.apple.mail"}},
+        json={"text": "hello", "context": {"app_id": "com.apple.mail"}},
     )
     assert resp.status_code == 503
     assert resp.json()["error"]["code"] == "NOT_CONFIGURED"
 
 
-def test_polish_invalid_base64() -> None:
+def test_polish_missing_text() -> None:
     client.post("/config", json=_valid_config)
-    resp = client.post("/polish", json={"audio_base64": "not-valid-base64!!!"})
-    assert resp.status_code == 400
-    assert resp.json()["error"]["code"] == "INVALID_AUDIO"
-
-
-@patch("open_typeless.stt.transcribe", new_callable=AsyncMock)
-@patch("open_typeless.llm.polish", new_callable=AsyncMock)
-def test_polish_success(mock_polish, mock_transcribe) -> None:
-    mock_transcribe.return_value = "hello world"
-    mock_polish.return_value = "Hello, world!"
-
-    client.post("/config", json=_valid_config)
-    resp = client.post(
-        "/polish",
-        json={
-            "audio_base64": _valid_audio,
-            "context": {"app_id": "com.apple.mail", "window_title": "Compose"},
-        },
-    )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["text"] == "Hello, world!"
-    assert data["raw_transcript"] == "hello world"
-    assert data["task"] == "polish"
-    assert data["context_detected"] == "email"
-    assert data["model_used"] == "test-model"
-    assert "stt_ms" in data
-    assert "llm_ms" in data
-    assert "total_ms" in data
-
-
-@patch("open_typeless.stt.transcribe", new_callable=AsyncMock)
-@patch("open_typeless.llm.polish", new_callable=AsyncMock)
-def test_polish_translate_task(mock_polish, mock_transcribe) -> None:
-    mock_transcribe.return_value = "你好世界"
-    mock_polish.return_value = "Hello world"
-
-    client.post("/config", json=_valid_config)
-    resp = client.post(
-        "/polish",
-        json={
-            "audio_base64": _valid_audio,
-            "options": {"task": "translate", "output_language": "en"},
-        },
-    )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["task"] == "translate"
-    assert data["text"] == "Hello world"
-
-
-def test_polish_translate_missing_output_language() -> None:
-    client.post("/config", json=_valid_config)
-    resp = client.post(
-        "/polish",
-        json={
-            "audio_base64": _valid_audio,
-            "options": {"task": "translate"},
-        },
-    )
+    resp = client.post("/polish", json={"context": {"app_id": "com.apple.mail"}})
     assert resp.status_code == 422
-    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
-    assert "output_language" in resp.json()["error"]["message"]
 
 
-@patch("open_typeless.stt.transcribe", new_callable=AsyncMock)
 @patch("open_typeless.llm.polish", new_callable=AsyncMock)
-def test_polish_text_mode(mock_polish, mock_transcribe) -> None:
+def test_polish_success(mock_polish) -> None:
     mock_polish.return_value = "Hello, world!"
 
     client.post("/config", json=_valid_config)
@@ -184,73 +120,63 @@ def test_polish_text_mode(mock_polish, mock_transcribe) -> None:
     data = resp.json()
     assert data["text"] == "Hello, world!"
     assert data["raw_transcript"] == "hello world"
-    assert data["stt_ms"] == 0
+    assert data["task"] == "polish"
     assert data["context_detected"] == "email"
-    mock_transcribe.assert_not_called()
+    assert data["model_used"] == "test-model"
+    assert "stt_ms" not in data
+    assert "llm_ms" in data
+    assert "total_ms" in data
 
 
-@patch("open_typeless.stt.transcribe", new_callable=AsyncMock)
 @patch("open_typeless.llm.polish", new_callable=AsyncMock)
-def test_polish_text_mode_llm_only_config(mock_polish, mock_transcribe) -> None:
-    """Text mode works even without STT configured."""
+def test_polish_translate_task(mock_polish) -> None:
+    mock_polish.return_value = "Hello world"
+
+    client.post("/config", json=_valid_config)
+    resp = client.post(
+        "/polish",
+        json={
+            "text": "你好世界",
+            "options": {"task": "translate", "output_language": "en"},
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["task"] == "translate"
+    assert data["text"] == "Hello world"
+
+
+def test_polish_translate_missing_output_language() -> None:
+    client.post("/config", json=_valid_config)
+    resp = client.post(
+        "/polish",
+        json={
+            "text": "你好世界",
+            "options": {"task": "translate"},
+        },
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert "output_language" in resp.json()["error"]["message"]
+
+
+@patch("open_typeless.llm.polish", new_callable=AsyncMock)
+def test_polish_llm_only_config(mock_polish) -> None:
+    """Polish works even without STT configured (text mode only)."""
     mock_polish.return_value = "Polished text"
 
     client.post("/config", json={"llm": _valid_config["llm"]})
     resp = client.post("/polish", json={"text": "some transcript"})
     assert resp.status_code == 200
     assert resp.json()["text"] == "Polished text"
-    mock_transcribe.assert_not_called()
 
 
-def test_polish_neither_text_nor_audio() -> None:
-    client.post("/config", json=_valid_config)
-    resp = client.post("/polish", json={"context": {"app_id": "com.apple.mail"}})
-    assert resp.status_code == 422
-    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
-    assert "Either text or audio_base64" in resp.json()["error"]["message"]
-
-
-def test_polish_both_text_and_audio() -> None:
-    client.post("/config", json=_valid_config)
-    resp = client.post(
-        "/polish", json={"text": "hello", "audio_base64": _valid_audio}
-    )
-    assert resp.status_code == 422
-    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
-    assert "mutually exclusive" in resp.json()["error"]["message"]
-
-
-def test_polish_audio_without_stt_config() -> None:
-    client.post("/config", json={"llm": _valid_config["llm"]})
-    resp = client.post("/polish", json={"audio_base64": _valid_audio})
-    assert resp.status_code == 503
-    assert resp.json()["error"]["code"] == "STT_NOT_CONFIGURED"
-
-
-from open_typeless.stt import STTError
-
-
-@patch("open_typeless.stt.transcribe", new_callable=AsyncMock)
-def test_polish_stt_failure(mock_transcribe) -> None:
-    mock_transcribe.side_effect = STTError("STT API failed")
-
-    client.post("/config", json=_valid_config)
-    resp = client.post("/polish", json={"audio_base64": _valid_audio})
-    assert resp.status_code == 502
-    assert resp.json()["error"]["code"] == "STT_FAILURE"
-
-
-from open_typeless.llm import LLMError
-
-
-@patch("open_typeless.stt.transcribe", new_callable=AsyncMock)
 @patch("open_typeless.llm.polish", new_callable=AsyncMock)
-def test_polish_llm_failure(mock_polish, mock_transcribe) -> None:
-    mock_transcribe.return_value = "hello"
+def test_polish_llm_failure(mock_polish) -> None:
     mock_polish.side_effect = LLMError("LLM API failed")
 
     client.post("/config", json=_valid_config)
-    resp = client.post("/polish", json={"audio_base64": _valid_audio})
+    resp = client.post("/polish", json={"text": "hello"})
     assert resp.status_code == 502
     assert resp.json()["error"]["code"] == "LLM_FAILURE"
 

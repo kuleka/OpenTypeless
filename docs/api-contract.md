@@ -1,6 +1,6 @@
 # OpenTypeless Engine ↔ Client API Contract
 
-> **Version**: 1.4.0-draft
+> **Version**: 1.5.0-draft
 > **Base URL**: `http://127.0.0.1:19823`
 > **Port 可配置**: 通过环境变量 `OPEN_TYPELESS_PORT` 覆盖默认端口
 
@@ -302,13 +302,11 @@ Content-Type: multipart/form-data
 
 ## 6. POST /polish — 核心润色管线
 
-这是 Engine 的核心端点。Client 发送**文字或音频**和当前 app 上下文，Engine 返回润色后的文本。
+这是 Engine 的核心端点。Client 发送**文字**和当前 app 上下文，Engine 返回润色后的文本。
 
-支持两种输入模式：
-- **文字输入**（本地 STT 模式）：Client 本地转写后，将 `text` 直接传入，Engine 跳过 STT 直接润色
-- **音频输入**（远程 STT 模式）：Client 传入 `audio_base64`，Engine 内部完成 STT + 润色
+Client 在本地完成 STT 转写后，将 `text` 传入，Engine 进行场景检测和 LLM 润色。
 
-> **前置条件**：必须先调用 `POST /config` 配置 LLM。如果传入音频，还需已配置 STT。
+> **前置条件**：必须先调用 `POST /config` 配置 LLM。
 
 ### Request
 
@@ -330,44 +328,22 @@ Content-Type: application/json
 }
 ```
 
-或（音频输入模式）：
-
-```json
-{
-  "audio_base64": "<base64 编码的音频数据>",
-  "audio_format": "wav",
-  "context": {
-    "app_id": "com.apple.mail",
-    "window_title": "Compose New Message"
-  },
-  "options": {
-    "task": "polish",
-    "language": "auto"
-  }
-}
-```
-
 #### 请求字段
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
-| `text` | string | 二选一 | — | 已转写的文本（本地 STT 模式）。与 `audio_base64` 互斥，二者必传其一 |
-| `audio_base64` | string | 二选一 | — | Base64 编码的音频数据（远程 STT 模式）。与 `text` 互斥 |
-| `audio_format` | string | 否 | `"wav"` | 音频格式：`"wav"` 或 `"m4a"`。仅当传入 `audio_base64` 时有效 |
+| `text` | string | 是 | — | 已转写的文本 |
 | `context` | object | 否 | `{}` | 当前 app 上下文，用于场景检测 |
 | `context.app_id` | string | 否 | `""` | macOS bundle ID，如 `"com.apple.mail"` |
 | `context.window_title` | string | 否 | `""` | 当前窗口标题 |
 | `options` | object | 否 | `{}` | 可选配置，用于覆盖 `/config` 中的默认值 |
 | `options.task` | string | 否 | `"polish"` | 任务类型：`"polish"`（润色）、`"translate"`（翻译）。详见下方 [Task 类型说明](#task-类型说明) |
-| `options.language` | string | 否 | config 中的 `default_language` | STT 语言提示（仅音频模式有效）：`"auto"` / `"en"` / `"zh"` 等 |
 | `options.model` | string | 否 | config 中的 `llm.model` | 覆盖本次请求使用的 LLM 模型 |
 | `options.output_language` | string | 条件必填 | `null` | 输出语言。当 `task = "translate"` 时**必填**，如 `"en"`、`"zh"`、`"ja"`。其他 task 时忽略 |
 
 #### 输入校验规则
 
-- `text` 和 `audio_base64` 都不传 → **422 VALIDATION_ERROR**：`"Either text or audio_base64 must be provided"`
-- `text` 和 `audio_base64` 同时传 → **422 VALIDATION_ERROR**：`"text and audio_base64 are mutually exclusive"`
-- 传了 `audio_base64` 但 STT 未配置 → **503 STT_NOT_CONFIGURED**
+- `text` 未传 → **422 Validation Error**（Pydantic 自动校验）
 
 #### Task 类型说明
 
@@ -392,7 +368,6 @@ Content-Type: application/json
   "task": "polish",
   "context_detected": "email",
   "model_used": "minimax/minimax-m2.7",
-  "stt_ms": 250,
   "llm_ms": 180,
   "total_ms": 430
 }
@@ -403,11 +378,10 @@ Content-Type: application/json
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `text` | string | 处理后的最终文本，Client 应将此文本粘贴到光标位置 |
-| `raw_transcript` | string | STT 原始转写文本。文字输入模式下与输入的 `text` 相同 |
+| `raw_transcript` | string | 原始输入文本（与输入的 `text` 相同） |
 | `task` | string | 实际执行的任务类型：`"polish"` 或 `"translate"` |
 | `context_detected` | string | 检测到的场景类型（见[场景类型定义](#10-场景类型定义)） |
 | `model_used` | string | 实际使用的 LLM 模型标识 |
-| `stt_ms` | integer | STT 转写耗时（毫秒）。文字输入模式下为 `0` |
 | `llm_ms` | integer | LLM 处理耗时（毫秒） |
 | `total_ms` | integer | 端到端总耗时（毫秒） |
 
@@ -431,31 +405,7 @@ GET /contexts
     "email": {
       "match_rules": {
         "app_ids": ["com.apple.mail", "com.microsoft.Outlook"],
-        "window_title_contains": ["Gmail", "Outlook"]
-      }
-    },
-    "chat": {
-      "match_rules": {
-        "app_ids": ["com.tinyspeck.slackmacgap", "com.tencent.xinWeChat"],
-        "window_title_contains": ["Slack", "Discord", "Telegram"]
-      }
-    },
-    "ai_chat": {
-      "match_rules": {
-        "app_ids": [],
-        "window_title_contains": ["ChatGPT", "Claude", "Cursor"]
-      }
-    },
-    "document": {
-      "match_rules": {
-        "app_ids": ["com.apple.Notes", "md.obsidian"],
-        "window_title_contains": ["Notion", "Google Docs"]
-      }
-    },
-    "code": {
-      "match_rules": {
-        "app_ids": ["com.microsoft.VSCode", "com.jetbrains.intellij"],
-        "window_title_contains": ["Xcode"]
+        "window_title_contains": ["Gmail", "Outlook", "Mail", "ProtonMail"]
       }
     },
     "default": {
@@ -517,10 +467,9 @@ Content-Type: application/json
 
 | HTTP 状态码 | 错误码 | 触发条件 |
 |-------------|--------|----------|
-| **400** | `INVALID_AUDIO` | 音频数据无效（`audio_base64` 不是合法 Base64，或 `/transcribe` 的文件格式不支持） |
-| **422** | `VALIDATION_ERROR` | 请求校验失败（如 `text` 和 `audio_base64` 都未传、同时传了两者、缺少必填字段等） |
+| **422** | `VALIDATION_ERROR` | 请求校验失败（缺少必填字段、`task` 为 `translate` 时缺少 `output_language` 等） |
 | **503** | `NOT_CONFIGURED` | 尚未调用 `POST /config` 配置 LLM，Engine 无法处理润色请求 |
-| **503** | `STT_NOT_CONFIGURED` | 请求需要 STT（`/transcribe` 或 `/polish` 带音频）但未配置 `stt` |
+| **503** | `STT_NOT_CONFIGURED` | `/transcribe` 请求但未配置 `stt` |
 | **502** | `STT_FAILURE` | STT 服务请求失败或超时（30 秒） |
 | **502** | `LLM_FAILURE` | LLM 服务请求失败或超时（30 秒） |
 | **500** | `INTERNAL_ERROR` | Engine 内部未预期的错误 |
@@ -540,18 +489,16 @@ Content-Type: application/json
 
 ## 10. 场景类型定义
 
-Engine 支持 6 种场景，每种场景有不同的润色风格：
+Engine 支持 2 种场景，每种场景有不同的润色风格：
 
 | 场景 | 说明 | 润色风格 |
 |------|------|----------|
-| `email` | 邮件应用 | 正式、结构化、专业语气 |
-| `chat` | 即时通讯 | 口语化、简洁、轻松 |
-| `ai_chat` | AI 对话工具 | 结构化的 prompt、清晰指令 |
-| `document` | 文档/笔记 | 段落式、完整句子、书面语 |
-| `code` | 代码编辑器 | 技术性、精确、简洁 |
-| `default` | 未匹配时的兜底 | 自动检测语气 |
+| `email` | 邮件应用 | 处理收件人/签名格式，段落分隔，列表整理 |
+| `default` | 未匹配时的兜底 | 自动检测语气，去语气词，整理列表 |
 
-**匹配优先级**：按 email → chat → ai_chat → document → code → default 顺序，**第一个匹配的场景生效**。
+核心原则：不丢信息、不改意思、保持用户原始语气。
+
+**匹配优先级**：按 email → default 顺序，**第一个匹配的场景生效**。
 
 **匹配逻辑**：
 1. 先检查 `app_id` 是否精确匹配 `app_ids` 列表中的任一项
@@ -614,7 +561,7 @@ Mock 响应：
 }
 ```
 
-### Mock /polish — 文字输入模式（本地 STT）
+### Mock /polish — Email 场景
 
 请求：
 
@@ -637,49 +584,17 @@ Mock 响应：
   "task": "polish",
   "context_detected": "email",
   "model_used": "mock",
-  "stt_ms": 0,
   "llm_ms": 0,
   "total_ms": 0
 }
 ```
 
-### Mock /polish — 音频输入模式（远程 STT）
-
-请求：
-
-```json
-{
-  "audio_base64": "UklGRiQAAABXQVZFZm10IBAAAA...",
-  "audio_format": "wav",
-  "context": {
-    "app_id": "com.apple.mail",
-    "window_title": "Compose"
-  }
-}
-```
-
-Mock 响应：
-
-```json
-{
-  "text": "Hi Tom,\n\nThank you for sending the report. I've reviewed the numbers and everything looks good. Let me know if you need anything else.\n\nBest regards",
-  "raw_transcript": "hi tom thanks for sending the report i've reviewed the numbers and everything looks good let me know if you need anything else",
-  "task": "polish",
-  "context_detected": "email",
-  "model_used": "mock",
-  "stt_ms": 250,
-  "llm_ms": 180,
-  "total_ms": 430
-}
-```
-
-### Mock /polish — Chat 场景
+### Mock /polish — Default 场景
 
 请求：
 ```json
 {
-  "audio_base64": "UklGRiQAAABXQVZFZm10IBAAAA...",
-  "audio_format": "wav",
+  "text": "sounds good let's sync up after lunch",
   "context": {
     "app_id": "com.tinyspeck.slackmacgap",
     "window_title": "#general - Slack"
@@ -690,24 +605,22 @@ Mock 响应：
 Mock 响应：
 ```json
 {
-  "text": "sounds good, let's sync up after lunch 👍",
+  "text": "Sounds good. Let's sync up after lunch.",
   "raw_transcript": "sounds good let's sync up after lunch",
   "task": "polish",
-  "context_detected": "chat",
+  "context_detected": "default",
   "model_used": "mock",
-  "stt_ms": 0,
   "llm_ms": 0,
   "total_ms": 0
 }
 ```
 
-### Mock /polish — 翻译场景（中文语音 → 英文输出）
+### Mock /polish — 翻译场景（中文 → 英文）
 
 请求：
 ```json
 {
-  "audio_base64": "UklGRiQAAABXQVZFZm10IBAAAA...",
-  "audio_format": "wav",
+  "text": "汤姆你好今天下午三点开会请带上季度报告",
   "context": {
     "app_id": "com.apple.mail",
     "window_title": "Compose"
@@ -727,7 +640,6 @@ Mock 响应：
   "task": "translate",
   "context_detected": "email",
   "model_used": "mock",
-  "stt_ms": 0,
   "llm_ms": 0,
   "total_ms": 0
 }
@@ -738,14 +650,10 @@ Mock 响应：
 请求：
 ```json
 {
-  "audio_base64": "UklGRiQAAABXQVZFZm10IBAAAA...",
-  "audio_format": "wav",
+  "text": "今天下午三点开会讨论了项目进度主要结论如下后端API已完成百分之八十前端预计下周交付需要补充单元测试",
   "context": {
     "app_id": "com.apple.Notes",
     "window_title": "Meeting Notes"
-  },
-  "options": {
-    "language": "zh"
   }
 }
 ```
@@ -758,7 +666,6 @@ Mock 响应：
   "task": "polish",
   "context_detected": "document",
   "model_used": "mock",
-  "stt_ms": 0,
   "llm_ms": 0,
   "total_ms": 0
 }
@@ -792,3 +699,4 @@ Client 端需要实现以下模块来对接 Engine：
 | 2026-03-28 | 1.2.0-draft | Config 改为 provider-agnostic 的 `stt` / `llm` 分组结构；Engine 不绑定任何特定 provider，只要求目标 API 兼容 OpenAI 格式；支持本地模型（如 Ollama） |
 | 2026-03-28 | 1.3.0-draft | `/polish` 新增 `options.task`（`polish` / `translate`）和 `options.output_language` 参数；响应新增 `task` 字段；translate 时 output_language 为必填，校验失败返回 422 |
 | 2026-03-29 | 1.4.0-draft | 新增 `POST /transcribe` 端点（multipart/form-data）；`/polish` 支持 `text` 或 `audio_base64` 二选一输入；`POST /config` 中 `stt` 改为可选（本地 STT 模式不需要配置远程 STT）；新增 `503 STT_NOT_CONFIGURED` 错误码；更新 Client 集成清单 |
+| 2026-03-31 | 1.5.0-draft | **BREAKING**: `/polish` 移除 `audio_base64` 和 `audio_format` 输入，`text` 变为必填；移除响应中的 `stt_ms` 字段。远程 STT 仍可通过独立的 `/transcribe` 端点使用 |

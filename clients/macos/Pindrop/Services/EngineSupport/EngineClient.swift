@@ -109,7 +109,6 @@ struct PolishResponse: Codable, Equatable {
     let task: String
     let contextDetected: String
     let modelUsed: String
-    let sttMs: Int
     let llmMs: Int
     let totalMs: Int
 
@@ -119,7 +118,6 @@ struct PolishResponse: Codable, Equatable {
         case task
         case contextDetected = "context_detected"
         case modelUsed = "model_used"
-        case sttMs = "stt_ms"
         case llmMs = "llm_ms"
         case totalMs = "total_ms"
     }

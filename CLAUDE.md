@@ -48,16 +48,17 @@ OpenTypeless/
 - 未配置时调 `/polish` 返回 `503 NOT_CONFIGURED`
 - **原因**：用户通过客户端 UI 配置一切，不需要接触命令行或环境变量
 
-### 3. /polish 支持双模式输入 + /transcribe 独立端点
-- `/polish` 接受 `text`（本地 STT 模式）或 `audio_base64`（远程 STT 模式），二选一
+### 3. /polish 只接受文本 + /transcribe 独立端点
+- `/polish` 只接受 `text`（必填），Client 本地完成 STT 后传入文本
 - `task: "polish"`（默认）→ 润色；`task: "translate"` + `output_language` → 翻译
 - `/transcribe` 是独立的 STT 端点（multipart/form-data），用于调试或只需转写的场景
-- **原因**：Client 可能用本地 WhisperKit 做 STT，只需 Engine 做润色；也可以把 STT 全交给 Engine
+- **原因**：Client 始终使用本地 WhisperKit 做 STT，`audio_base64` 模式从未被调用，已在 v1.5.0 移除
 
 ### 4. 场景检测（Scene Detection）
-- 6 种场景：email, chat, ai_chat, document, code, default
+- 2 种场景：email, default
 - 通过 app bundle ID 或 window title 匹配
-- 不同场景使用不同的润色 prompt 风格
+- email 场景会额外处理收件人/签名格式；default 场景自动适配风格
+- 核心原则：不丢信息、不改意思，去除语气词（嗯、呃、um、uh 等），内容适合时整理为列表
 - 匹配规则可通过 `POST /contexts` 动态更新（内存中，重启丢失）
 
 ### 5. 音频传输方式：录完再发（非流式）
@@ -70,6 +71,12 @@ OpenTypeless/
 - 可以 STT 用 Groq、LLM 用 OpenRouter，也可以全用 OpenAI，也可以 LLM 用本地 Ollama
 - 本地 STT 模式下可以不配置 `stt`，只配 `llm` 即可
 
+### 7. macOS 本地 STT 保留在客户端
+
+- macOS 客户端支持本地 STT（WhisperKit，CoreML/ANE 加速）和远程 STT（通过 Engine `/transcribe`），用户在设置中选择
+- Engine 端不做本地 STT，仅通过远程 API 提供 STT 能力（`POST /transcribe`）
+- 未来非 Apple 平台（Linux/Windows）可在 Engine 端加本地 STT fallback（faster-whisper 等）
+
 ## 接口端点一览
 
 | 方法 | 端点 | 说明 |
@@ -78,7 +85,7 @@ OpenTypeless/
 | POST | `/config` | 推送 API 配置（STT + LLM 连接信息） |
 | GET | `/config` | 查看当前配置（key 脱敏） |
 | POST | `/transcribe` | 独立 STT：音频 → 转写文本 |
-| POST | `/polish` | 核心管线：文本或音频 → 润色/翻译文本 |
+| POST | `/polish` | 核心管线：文本 → 润色/翻译文本（v1.5.0 起只接受 text） |
 | GET | `/contexts` | 查看场景匹配规则 |
 | POST | `/contexts` | 更新场景匹配规则 |
 
@@ -130,6 +137,39 @@ OpenTypeless/
 ### Client 开发
 - 代码在 `clients/macos/Pindrop/`
 - 用 Xcode 打开 `clients/macos/Pindrop.xcodeproj`
+
+## 运行时行为速查
+
+> ⚠️ 修改了下列流程的代码时，同步更新此 section 和 `memory/reference_data_flows.md`。
+
+### 三种转写路径
+
+| 路径 | STT 来源 | 用户可选？ | 润色？ |
+|------|---------|-----------|--------|
+| 批处理录音 | local WhisperKit 或 remote Engine `/transcribe` | 是（sttMode 设置） | 是（polishTranscribedTextIfNeeded） |
+| 流式转写 | 本地 Parakeet（CoreML）固定 | 否 | 否（直接插入，不等润色） |
+| 媒体转写 | 跟随 sttMode 设置 | 是 | 否（直接保存原始转写到历史） |
+
+### 批处理主链路
+
+```
+快捷键 → RecordingCoordinator.startRecording()
+→ AudioRecorder 录音 → stopRecordingAndTranscribe()
+→ TranscriptionService.transcribe()
+    ├─ sttMode == .local → WhisperKitEngine（本地）
+    └─ sttMode == .remote → EngineTranscriptionEngine → POST /transcribe
+→ polishTranscribedTextIfNeeded() → PolishService → POST /polish
+→ OutputManager 粘贴到光标
+```
+
+### Engine 生命周期
+
+```
+App 启动 → EngineProcessManager.start()（后台）
+→ 发现/启动 Engine 进程 → health polling（每 5 秒）
+→ 首次 healthy → pushConfig()（POST /config 推送 LLM/STT 密钥）
+→ ready
+```
 
 ## 用户偏好
 

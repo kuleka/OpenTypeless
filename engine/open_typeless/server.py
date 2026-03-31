@@ -1,6 +1,5 @@
 """FastAPI HTTP server — all endpoints."""
 
-import base64
 import os
 import time
 from collections.abc import AsyncIterator
@@ -124,12 +123,6 @@ async def post_polish(req: PolishRequest) -> JSONResponse | PolishResponse:
     if not is_configured():
         return _error(503, "NOT_CONFIGURED", "Engine is not configured. Call POST /config first.")
 
-    # Validate input: text and audio_base64 are mutually exclusive
-    if req.text is None and req.audio_base64 is None:
-        return _error(422, "VALIDATION_ERROR", "Either text or audio_base64 must be provided")
-    if req.text is not None and req.audio_base64 is not None:
-        return _error(422, "VALIDATION_ERROR", "text and audio_base64 are mutually exclusive")
-
     # Validate task
     if req.options.task == TaskType.TRANSLATE and not req.options.output_language:
         return _error(422, "VALIDATION_ERROR", "output_language is required when task is translate")
@@ -140,33 +133,7 @@ async def post_polish(req: PolishRequest) -> JSONResponse | PolishResponse:
     assert config is not None
 
     total_start = time.perf_counter()
-    stt_ms = 0
-
-    if req.text is not None:
-        # Text mode: skip STT
-        raw_transcript = req.text
-    else:
-        # Audio mode: need STT
-        if not is_stt_configured():
-            return _error(
-                503,
-                "STT_NOT_CONFIGURED",
-                "STT is not configured. Call POST /config with stt settings first, or use local STT on the client.",
-            )
-
-        try:
-            audio_bytes = base64.b64decode(req.audio_base64, validate=True)
-        except Exception:
-            return _error(400, "INVALID_AUDIO", "audio_base64 is not valid base64 data")
-
-        language = req.options.language or config.default_language
-
-        stt_start = time.perf_counter()
-        try:
-            raw_transcript = await _stt_mod.transcribe(audio_bytes, language=language)
-        except STTError as e:
-            return _error(502, "STT_FAILURE", str(e))
-        stt_ms = int((time.perf_counter() - stt_start) * 1000)
+    raw_transcript = req.text
 
     # Scene detection
     scene = detect_scene(
@@ -200,7 +167,6 @@ async def post_polish(req: PolishRequest) -> JSONResponse | PolishResponse:
         task=req.options.task.value,
         context_detected=scene.value,
         model_used=model_override or config.llm.model,
-        stt_ms=stt_ms,
         llm_ms=llm_ms,
         total_ms=total_ms,
     )

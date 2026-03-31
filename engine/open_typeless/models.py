@@ -11,10 +11,6 @@ from pydantic import BaseModel
 
 class SceneType(str, Enum):
     EMAIL = "email"
-    CHAT = "chat"
-    AI_CHAT = "ai_chat"
-    DOCUMENT = "document"
-    CODE = "code"
     DEFAULT = "default"
 
 
@@ -79,9 +75,7 @@ class PolishOptions(BaseModel):
 
 
 class PolishRequest(BaseModel):
-    text: Optional[str] = None
-    audio_base64: Optional[str] = None
-    audio_format: str = "wav"
+    text: str
     context: AppContext = AppContext()
     options: PolishOptions = PolishOptions()
 
@@ -92,7 +86,6 @@ class PolishResponse(BaseModel):
     task: str
     context_detected: str
     model_used: str
-    stt_ms: int
     llm_ms: int
     total_ms: int
 
