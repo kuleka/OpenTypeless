@@ -600,11 +600,11 @@ struct SettingsStoreTests {
         // This test verifies the struct only contains supported dictation hotkeys
         let toggleDefault = SettingsStore.Defaults.Hotkeys.toggleHotkey
         let pttDefault = SettingsStore.Defaults.Hotkeys.pushToTalkHotkey
-        let copyDefault = SettingsStore.Defaults.Hotkeys.copyLastTranscriptHotkey
+        let translateDefault = SettingsStore.Defaults.Hotkeys.translateHotkey
 
         #expect(!toggleDefault.isEmpty)
         #expect(!pttDefault.isEmpty)
-        #expect(!copyDefault.isEmpty)
+        #expect(!translateDefault.isEmpty)
     }
 
     @Test func testLegacyMigrationSkipsWhenEngineLLMAlreadyConfigured() throws {

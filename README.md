@@ -2,7 +2,7 @@
 
 An open-source AI voice dictation tool. Speak naturally, get polished text at your cursor.
 
-OpenTypeless removes filler words, fixes grammar, and adapts tone based on what app you're using (email, chat, code editor, etc.).
+OpenTypeless removes filler words, fixes grammar, and adapts tone based on whether you're drafting an email or dictating in a general app context.
 
 ## Current State
 
@@ -20,7 +20,7 @@ The macOS client Phase 1 integration is complete. The current implementation inc
 - Engine settings UI and config sync
 - app-level tests plus UI smoke coverage
 
-Some legacy auxiliary flows from the original app still exist, but the main dictation pipeline now runs through the `Client + Engine` split.
+The legacy quick-capture and AI-only auxiliary flows have been removed. The supported baseline now runs through the `Client + Engine` split.
 
 Useful references:
 
@@ -50,12 +50,8 @@ OpenTypeless detects which app you're using and adjusts its output:
 
 | Scene | Apps | Style |
 |-------|------|-------|
-| Email | Mail, Outlook, Gmail | Formal, structured |
-| Chat | Slack, WeChat, Discord, Telegram | Casual, concise |
-| AI Chat | ChatGPT, Claude, Cursor | Structured prompts |
-| Document | Notes, Notion, Obsidian, Word | Paragraph format |
-| Code | VS Code, IntelliJ, Xcode | Technical, precise |
-| Default | Everything else | Auto-detect |
+| Email | Mail, Outlook, Gmail, ProtonMail | Formal, structured email formatting |
+| Default | Everything else | General cleanup while preserving meaning and tone |
 
 ## Architecture
 
@@ -75,7 +71,7 @@ OpenTypeless detects which app you're using and adjusts its output:
 🚧 **Under active development**
 
 - [x] Phase 1: macOS client and Engine integration foundation
-- [ ] Follow-up cleanup for remaining legacy client flows
+- [x] Legacy client cleanup for retired quick capture and AI-only flows
 - [ ] Broader UX polish and release hardening
 
 ## License

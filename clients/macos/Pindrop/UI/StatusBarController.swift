@@ -27,7 +27,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var cancelOperationItem: NSMenuItem?
 
     private var transcriptsMenu: NSMenu?
-    private var copyLastTranscriptItem: NSMenuItem?
+    private var translateItem: NSMenuItem?
     private var pasteLastTranscriptItem: NSMenuItem?
     private var exportLastTranscriptItem: NSMenuItem?
     private var recentTranscriptsSeparator: NSMenuItem?
@@ -237,13 +237,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(transcriptsHeader)
 
         transcriptsMenu = NSMenu()
-        copyLastTranscriptItem = NSMenuItem(
-            title: localized("Copy Last Transcript", locale: locale),
-            action: #selector(copyLastTranscript),
-            keyEquivalent: "c"
+        translateItem = NSMenuItem(
+            title: localized("Translate", locale: locale),
+            action: #selector(translateAction),
+            keyEquivalent: "t"
         )
-        copyLastTranscriptItem?.target = self
-        transcriptsMenu?.addItem(copyLastTranscriptItem!)
+        translateItem?.target = self
+        transcriptsMenu?.addItem(translateItem!)
 
         pasteLastTranscriptItem = NSMenuItem(
             title: localized("Paste Last Transcript", locale: locale),
@@ -804,7 +804,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    @objc private func copyLastTranscript() {
+    @objc private func translateAction() {
         Task {
             await onCopyLastTranscript?()
         }

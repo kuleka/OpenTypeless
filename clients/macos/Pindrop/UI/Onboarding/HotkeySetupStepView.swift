@@ -34,10 +34,10 @@ struct HotkeySetupStepView: View {
                 )
 
                 hotkeyCard(
-                    title: localized("Copy Last Transcript", locale: locale),
-                    description: localized("Quickly copy your last transcription", locale: locale),
-                    hotkey: settings.copyLastTranscriptHotkey,
-                    icon: .copy
+                    title: localized("Translate", locale: locale),
+                    description: localized("Record and translate speech", locale: locale),
+                    hotkey: settings.translateHotkey,
+                    icon: .sparkles
                 )
             }
             .padding(.horizontal, 40)

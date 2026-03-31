@@ -45,8 +45,8 @@ private final class MockEngineStartupClient {
     private(set) var pushConfigCallCount = 0
     private(set) var lastPushedConfig: ConfigRequest?
 
-    func handlers() -> AppCoordinator.EngineStartupHandlers {
-        AppCoordinator.EngineStartupHandlers(
+    func handlers() -> EngineStartupHandlers {
+        EngineStartupHandlers(
             health: { [weak self] in
                 guard let self else {
                     throw EngineClientError.connectionFailed
@@ -255,8 +255,8 @@ struct AppCoordinatorEnginePipelineTests {
     private func makeCoordinator(
         transcriptionService: TranscriptionService? = nil,
         outputManager: OutputManager? = nil,
-        engineStartupHandlers: AppCoordinator.EngineStartupHandlers? = nil,
-        polishHandlers: AppCoordinator.PolishHandlers? = nil,
+        engineStartupHandlers: EngineStartupHandlers? = nil,
+        polishHandlers: PolishHandlers? = nil,
         toastPresenter: RecordingToastPresenter? = nil
     ) throws -> AppCoordinator {
         let modelContainer = try makeModelContainer()
@@ -333,7 +333,7 @@ struct AppCoordinatorEnginePipelineTests {
         try coordinator.settingsStore.saveEngineLLMAPIKey("sk-or-test")
         coordinator.settingsStore.selectedAppLanguage = .english
 
-        await coordinator.syncEngineConfigurationOnStartup()
+        await coordinator.engineRuntimeCoordinator.syncEngineConfigurationOnStartup()
 
         #expect(mockEngineClient.healthCallCount == 1)
         #expect(mockEngineClient.fetchConfigCallCount == 0)
@@ -407,7 +407,7 @@ struct AppCoordinatorEnginePipelineTests {
         coordinator.settingsStore.engineLLMModel = "openai/gpt-4o-mini"
         try coordinator.settingsStore.saveEngineLLMAPIKey("sk-or-test")
 
-        await coordinator.syncEngineConfigurationOnStartup()
+        await coordinator.engineRuntimeCoordinator.syncEngineConfigurationOnStartup()
 
         #expect(mockEngineClient.healthCallCount == 1)
         #expect(mockEngineClient.fetchConfigCallCount == 0)
@@ -427,7 +427,7 @@ struct AppCoordinatorEnginePipelineTests {
         coordinator.settingsStore.engineLLMModel = "openai/gpt-4o-mini"
         try coordinator.settingsStore.saveEngineLLMAPIKey("sk-or-test")
 
-        await coordinator.syncEngineConfigurationOnStartup()
+        await coordinator.engineRuntimeCoordinator.syncEngineConfigurationOnStartup()
 
         #expect(mockEngineClient.healthCallCount == 1)
         #expect(mockEngineClient.pushConfigCallCount == 0)
@@ -472,7 +472,7 @@ struct AppCoordinatorEnginePipelineTests {
         )
 
         let coordinator = try makeCoordinator(
-            polishHandlers: AppCoordinator.PolishHandlers(
+            polishHandlers: PolishHandlers(
                 polish: { text, appContext, _, _ in
                     receivedText = text
                     receivedAppContext = appContext
@@ -494,7 +494,7 @@ struct AppCoordinatorEnginePipelineTests {
             .ready(version: "1.4.0-draft", detail: "Engine is ready for local dictation with text polishing.")
         )
 
-        let result = await coordinator.polishTranscribedTextIfNeeded(
+        let result = await coordinator.recordingCoordinator.polishTranscribedTextIfNeeded(
             "draft this follow-up",
             appContext: expectedContext
         )
@@ -515,7 +515,7 @@ struct AppCoordinatorEnginePipelineTests {
     @Test func polishFallsBackAndShowsToastWhenEngineIsOffline() async throws {
         let presenter = RecordingToastPresenter()
         let coordinator = try makeCoordinator(
-            polishHandlers: AppCoordinator.PolishHandlers(
+            polishHandlers: PolishHandlers(
                 polish: { _, _, _, _ in
                     throw EngineClientError.connectionFailed
                 }
@@ -527,9 +527,9 @@ struct AppCoordinatorEnginePipelineTests {
             .ready(version: "1.4.0-draft", detail: "Engine is ready for local dictation with text polishing.")
         )
 
-        let result = await coordinator.polishTranscribedTextIfNeeded(
+        let result = await coordinator.recordingCoordinator.polishTranscribedTextIfNeeded(
             "leave this raw",
-            appContext: nil
+            appContext: nil as AppContextInfo?
         )
 
         #expect(result.finalText == "leave this raw")
@@ -559,7 +559,7 @@ struct AppCoordinatorEnginePipelineTests {
         let coordinator = try makeCoordinator(
             transcriptionService: transcriptionService,
             outputManager: outputFixture.outputManager,
-            polishHandlers: AppCoordinator.PolishHandlers(
+            polishHandlers: PolishHandlers(
                 polish: { text, _, _, _ in
                     return PolishService.PolishResult(
                         text: "Dr. Smith, please follow up.",
@@ -583,7 +583,7 @@ struct AppCoordinatorEnginePipelineTests {
             WordReplacement(originals: ["doctor"], replacement: "Dr.", sortOrder: 0)
         )
 
-        try await coordinator.processRecordedAudioData(
+        try await coordinator.recordingCoordinator.processRecordedAudioData(
             makeFloatAudioData(seconds: 1.0),
             duration: 1.25
         )
@@ -618,7 +618,7 @@ struct AppCoordinatorEnginePipelineTests {
         let coordinator = try makeCoordinator(
             transcriptionService: transcriptionService,
             outputManager: outputFixture.outputManager,
-            polishHandlers: AppCoordinator.PolishHandlers(
+            polishHandlers: PolishHandlers(
                 polish: { text, _, _, _ in
                     return PolishService.PolishResult(
                         text: "Please send the contract draft today.",
@@ -639,7 +639,7 @@ struct AppCoordinatorEnginePipelineTests {
             .ready(version: "1.4.0-draft", detail: "Engine is ready for remote transcription and text polishing.")
         )
 
-        try await coordinator.processRecordedAudioData(
+        try await coordinator.recordingCoordinator.processRecordedAudioData(
             makeFloatAudioData(seconds: 1.0),
             duration: 2.0
         )
@@ -674,7 +674,7 @@ struct AppCoordinatorEnginePipelineTests {
         let coordinator = try makeCoordinator(
             transcriptionService: transcriptionService,
             outputManager: outputFixture.outputManager,
-            polishHandlers: AppCoordinator.PolishHandlers(
+            polishHandlers: PolishHandlers(
                 polish: { _, _, _, _ in
                     throw EngineClientError.connectionFailed
                 }
@@ -687,7 +687,7 @@ struct AppCoordinatorEnginePipelineTests {
             .ready(version: "1.4.0-draft", detail: "Engine is ready for local dictation with text polishing.")
         )
 
-        try await coordinator.processRecordedAudioData(
+        try await coordinator.recordingCoordinator.processRecordedAudioData(
             makeFloatAudioData(seconds: 1.0),
             duration: 1.5
         )
@@ -728,7 +728,7 @@ struct AppCoordinatorEnginePipelineTests {
             .offline(detail: "Engine is not reachable at 127.0.0.1:19823.")
         )
 
-        try await coordinator.processRecordedAudioData(
+        try await coordinator.recordingCoordinator.processRecordedAudioData(
             makeFloatAudioData(seconds: 1.0),
             duration: 1.0
         )
@@ -760,7 +760,7 @@ struct AppCoordinatorEnginePipelineTests {
         )
 
         await #expect(throws: TranscriptionService.TranscriptionError.self) {
-            try await coordinator.processRecordedAudioData(
+            try await coordinator.recordingCoordinator.processRecordedAudioData(
                 makeFloatAudioData(seconds: 1.0),
                 duration: 1.0
             )

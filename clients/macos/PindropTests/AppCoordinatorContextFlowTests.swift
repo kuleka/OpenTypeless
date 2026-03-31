@@ -68,20 +68,20 @@ struct AppCoordinatorContextFlowTests {
         let legacy = snapshot.asCapturedContext
         #expect(legacy.clipboardText == nil)
 
-        #expect(AppCoordinator.shouldSuppressEscapeEvent(isRecording: true, isProcessing: false))
-        #expect(AppCoordinator.shouldSuppressEscapeEvent(isRecording: false, isProcessing: true))
-        #expect(AppCoordinator.shouldSuppressEscapeEvent(isRecording: false, isProcessing: false) == false)
+        #expect(EventTapManager.shouldSuppressEscapeEvent(isRecording: true, isProcessing: false))
+        #expect(EventTapManager.shouldSuppressEscapeEvent(isRecording: false, isProcessing: true))
+        #expect(EventTapManager.shouldSuppressEscapeEvent(isRecording: false, isProcessing: false) == false)
 
         let now = Date()
         #expect(
-            AppCoordinator.isDoubleEscapePress(
+            EventTapManager.isDoubleEscapePress(
                 now: now,
                 lastEscapeTime: now.addingTimeInterval(-0.2),
                 threshold: 0.4
             )
         )
         #expect(
-            AppCoordinator.isDoubleEscapePress(
+            EventTapManager.isDoubleEscapePress(
                 now: now,
                 lastEscapeTime: now.addingTimeInterval(-0.6),
                 threshold: 0.4
@@ -111,10 +111,10 @@ struct AppCoordinatorContextFlowTests {
     }
 
     @Test func escapeSuppressionOnlyWhenRecordingOrProcessing() {
-        #expect(AppCoordinator.shouldSuppressEscapeEvent(isRecording: true, isProcessing: false))
-        #expect(AppCoordinator.shouldSuppressEscapeEvent(isRecording: false, isProcessing: true))
-        #expect(AppCoordinator.shouldSuppressEscapeEvent(isRecording: true, isProcessing: true))
-        #expect(AppCoordinator.shouldSuppressEscapeEvent(isRecording: false, isProcessing: false) == false)
+        #expect(EventTapManager.shouldSuppressEscapeEvent(isRecording: true, isProcessing: false))
+        #expect(EventTapManager.shouldSuppressEscapeEvent(isRecording: false, isProcessing: true))
+        #expect(EventTapManager.shouldSuppressEscapeEvent(isRecording: true, isProcessing: true))
+        #expect(EventTapManager.shouldSuppressEscapeEvent(isRecording: false, isProcessing: false) == false)
     }
 
     @Test func doubleEscapeDetectionHonorsThreshold() {
@@ -122,15 +122,15 @@ struct AppCoordinatorContextFlowTests {
         let withinThreshold = now.addingTimeInterval(-0.25)
         let outsideThreshold = now.addingTimeInterval(-0.6)
 
-        #expect(AppCoordinator.isDoubleEscapePress(now: now, lastEscapeTime: withinThreshold, threshold: 0.4))
-        #expect(AppCoordinator.isDoubleEscapePress(now: now, lastEscapeTime: outsideThreshold, threshold: 0.4) == false)
-        #expect(AppCoordinator.isDoubleEscapePress(now: now, lastEscapeTime: nil, threshold: 0.4) == false)
+        #expect(EventTapManager.isDoubleEscapePress(now: now, lastEscapeTime: withinThreshold, threshold: 0.4))
+        #expect(EventTapManager.isDoubleEscapePress(now: now, lastEscapeTime: outsideThreshold, threshold: 0.4) == false)
+        #expect(EventTapManager.isDoubleEscapePress(now: now, lastEscapeTime: nil, threshold: 0.4) == false)
     }
 
     @Test func eventTapRecoveryReenablesForFirstDisableInWindow() {
         let now = Date()
 
-        let decision = AppCoordinator.determineEventTapRecovery(
+        let decision = determineEventTapRecovery(
             now: now,
             lastDisableAt: now.addingTimeInterval(-0.2),
             consecutiveDisableCount: 1,
@@ -145,7 +145,7 @@ struct AppCoordinatorContextFlowTests {
     @Test func eventTapRecoveryRecreatesAfterRepeatedDisablesInWindow() {
         let now = Date()
 
-        let decision = AppCoordinator.determineEventTapRecovery(
+        let decision = determineEventTapRecovery(
             now: now,
             lastDisableAt: now.addingTimeInterval(-0.15),
             consecutiveDisableCount: 2,
@@ -160,7 +160,7 @@ struct AppCoordinatorContextFlowTests {
     @Test func eventTapRecoveryResetsDisableBurstOutsideWindow() {
         let now = Date()
 
-        let decision = AppCoordinator.determineEventTapRecovery(
+        let decision = determineEventTapRecovery(
             now: now,
             lastDisableAt: now.addingTimeInterval(-1.5),
             consecutiveDisableCount: 5,
@@ -173,45 +173,45 @@ struct AppCoordinatorContextFlowTests {
     }
 
     @Test func normalizedTranscriptionTextTrimsWhitespaceAndNewlines() {
-        #expect(AppCoordinator.normalizedTranscriptionText("  hello world \n") == "hello world")
-        #expect(AppCoordinator.normalizedTranscriptionText("\n\t  ") == "")
+        #expect(RecordingCoordinator.normalizedTranscriptionText("  hello world \n") == "hello world")
+        #expect(RecordingCoordinator.normalizedTranscriptionText("\n\t  ") == "")
     }
 
     @Test func isTranscriptionEffectivelyEmptyTreatsBlankAudioPlaceholderAsEmpty() {
-        #expect(AppCoordinator.isTranscriptionEffectivelyEmpty(""))
-        #expect(AppCoordinator.isTranscriptionEffectivelyEmpty("   \n\t"))
-        #expect(AppCoordinator.isTranscriptionEffectivelyEmpty("[BLANK AUDIO]"))
-        #expect(AppCoordinator.isTranscriptionEffectivelyEmpty("  [blank audio]  "))
+        #expect(RecordingCoordinator.isTranscriptionEffectivelyEmpty(""))
+        #expect(RecordingCoordinator.isTranscriptionEffectivelyEmpty("   \n\t"))
+        #expect(RecordingCoordinator.isTranscriptionEffectivelyEmpty("[BLANK AUDIO]"))
+        #expect(RecordingCoordinator.isTranscriptionEffectivelyEmpty("  [blank audio]  "))
 
-        #expect(AppCoordinator.isTranscriptionEffectivelyEmpty("[BLANK AUDIO] detected speech") == false)
-        #expect(AppCoordinator.isTranscriptionEffectivelyEmpty("transcribed text") == false)
+        #expect(RecordingCoordinator.isTranscriptionEffectivelyEmpty("[BLANK AUDIO] detected speech") == false)
+        #expect(RecordingCoordinator.isTranscriptionEffectivelyEmpty("transcribed text") == false)
     }
 
     @Test func shouldPersistHistoryRequiresSuccessfulOutputAndNonEmptyText() {
-        #expect(AppCoordinator.shouldPersistHistory(outputSucceeded: true, text: "transcribed text"))
+        #expect(RecordingCoordinator.shouldPersistHistory(outputSucceeded: true, text: "transcribed text"))
 
-        #expect(AppCoordinator.shouldPersistHistory(outputSucceeded: false, text: "transcribed text") == false)
-        #expect(AppCoordinator.shouldPersistHistory(outputSucceeded: true, text: "   ") == false)
-        #expect(AppCoordinator.shouldPersistHistory(outputSucceeded: true, text: "[BLANK AUDIO]") == false)
+        #expect(RecordingCoordinator.shouldPersistHistory(outputSucceeded: false, text: "transcribed text") == false)
+        #expect(RecordingCoordinator.shouldPersistHistory(outputSucceeded: true, text: "   ") == false)
+        #expect(RecordingCoordinator.shouldPersistHistory(outputSucceeded: true, text: "[BLANK AUDIO]") == false)
     }
 
     @Test func shouldUseStreamingTranscriptionTruthTable() {
         #expect(
-            AppCoordinator.shouldUseStreamingTranscription(
+            RecordingCoordinator.shouldUseStreamingTranscription(
                 streamingFeatureEnabled: true,
                 outputMode: .directInsert
             )
         )
 
         #expect(
-            AppCoordinator.shouldUseStreamingTranscription(
+            RecordingCoordinator.shouldUseStreamingTranscription(
                 streamingFeatureEnabled: false,
                 outputMode: .directInsert
             ) == false
         )
 
         #expect(
-            AppCoordinator.shouldUseStreamingTranscription(
+            RecordingCoordinator.shouldUseStreamingTranscription(
                 streamingFeatureEnabled: true,
                 outputMode: .clipboard
             ) == false
@@ -220,28 +220,28 @@ struct AppCoordinatorContextFlowTests {
 
     @Test func shouldUseSpeakerDiarizationTruthTable() {
         #expect(
-            AppCoordinator.shouldUseSpeakerDiarization(
+            RecordingCoordinator.shouldUseSpeakerDiarization(
                 diarizationFeatureEnabled: true,
                 isStreamingSessionActive: false
             )
         )
 
         #expect(
-            AppCoordinator.shouldUseSpeakerDiarization(
+            RecordingCoordinator.shouldUseSpeakerDiarization(
                 diarizationFeatureEnabled: false,
                 isStreamingSessionActive: false
             ) == false
         )
 
         #expect(
-            AppCoordinator.shouldUseSpeakerDiarization(
+            RecordingCoordinator.shouldUseSpeakerDiarization(
                 diarizationFeatureEnabled: true,
                 isStreamingSessionActive: true
             ) == false
         )
 
         #expect(
-            AppCoordinator.shouldUseSpeakerDiarization(
+            RecordingCoordinator.shouldUseSpeakerDiarization(
                 diarizationFeatureEnabled: false,
                 isStreamingSessionActive: true
             ) == false

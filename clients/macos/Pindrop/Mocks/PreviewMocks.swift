@@ -18,9 +18,9 @@ protocol SettingsStoreProtocol: ObservableObject {
     var pushToTalkHotkey: String { get set }
     var pushToTalkHotkeyCode: Int { get set }
     var pushToTalkHotkeyModifiers: Int { get set }
-    var copyLastTranscriptHotkey: String { get set }
-    var copyLastTranscriptHotkeyCode: Int { get set }
-    var copyLastTranscriptHotkeyModifiers: Int { get set }
+    var translateHotkey: String { get set }
+    var translateHotkeyCode: Int { get set }
+    var translateHotkeyModifiers: Int { get set }
     
     var outputMode: String { get set }
     var addTrailingSpace: Bool { get set }
@@ -58,9 +58,9 @@ final class PreviewSettingsStore: SettingsStoreProtocol {
     @Published var pushToTalkHotkey = "⌘/"
     @Published var pushToTalkHotkeyCode = 44
     @Published var pushToTalkHotkeyModifiers = 0x100
-    @Published var copyLastTranscriptHotkey = "⇧⌘C"
-    @Published var copyLastTranscriptHotkeyCode = 8
-    @Published var copyLastTranscriptHotkeyModifiers = 0x300
+    @Published var translateHotkey = "⇧⌘T"
+    @Published var translateHotkeyCode = 17
+    @Published var translateHotkeyModifiers = 0x300
     
     @Published var outputMode = "clipboard"
     @Published var addTrailingSpace = true

@@ -3,6 +3,22 @@
 from .models import PromptMessages, SceneType, TaskType
 from .prompt_router import get_prompts_data
 
+_LANGUAGE_NAMES: dict[str, str] = {
+    "en": "English",
+    "zh-Hans": "Simplified Chinese",
+    "zh": "Chinese",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "tr": "Turkish",
+    "ja": "Japanese",
+    "pt-BR": "Brazilian Portuguese",
+    "pt": "Portuguese",
+    "it": "Italian",
+    "nl": "Dutch",
+    "ko": "Korean",
+}
+
 
 def assemble_prompt(
     scene: SceneType,
@@ -23,11 +39,13 @@ def assemble_prompt(
 
     if task == TaskType.TRANSLATE:
         translate_template = data["translate_prompt"].strip()
-        context_prompt = translate_template.format(
-            output_language=output_language or "English"
-        )
+        lang = output_language or "English"
+        lang = _LANGUAGE_NAMES.get(lang, lang)
+        context_prompt = translate_template.format(output_language=lang)
 
     # Combine system + context into a single system message
     combined_system = f"{system_prompt}\n\n{context_prompt}"
 
-    return PromptMessages(system=combined_system, user=raw_transcript)
+    wrapped_user = f"<transcript>\n{raw_transcript}\n</transcript>"
+
+    return PromptMessages(system=combined_system, user=wrapped_user)

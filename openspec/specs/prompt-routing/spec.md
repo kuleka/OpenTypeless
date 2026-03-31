@@ -48,10 +48,10 @@ The engine SHALL assemble prompts in three layers: system prompt (shared rules),
 - **THEN** the assembled prompt SHALL contain the shared system rules, default context rules, and the raw transcript
 
 ### Requirement: Scene types
-The engine SHALL support 6 scene types: `email`, `chat`, `ai_chat`, `document`, `code`, `default`.
+The engine SHALL support 2 scene types: `email`, `default`.
 
 #### Scenario: All scene types are recognized
-- **WHEN** any of the 6 scene types is used
+- **WHEN** either supported scene type is used
 - **THEN** the engine SHALL load the corresponding prompt template without error
 
 ### Requirement: View and update contexts via API

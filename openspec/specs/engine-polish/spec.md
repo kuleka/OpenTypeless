@@ -10,13 +10,9 @@ The system SHALL send transcribed text to Engine `POST /polish` with app context
 - **WHEN** user dictates text while in an email app (e.g., `com.apple.mail`)
 - **THEN** Client sends `POST /polish` with `text`, `context.app_id`, and `context.window_title`, and Engine returns text polished in formal email style
 
-#### Scenario: Polish in chat context
-- **WHEN** user dictates text while in a chat app (e.g., Slack)
-- **THEN** Client sends `POST /polish` with context and Engine returns text polished in casual chat style
-
 #### Scenario: Polish with default context
-- **WHEN** user dictates text in an unrecognized app
-- **THEN** Client sends `POST /polish` with context and Engine returns text with `context_detected: "default"`
+- **WHEN** user dictates text outside the email scene, including other apps or unrecognized contexts
+- **THEN** Client sends `POST /polish` with context and Engine returns text with `context_detected: "default"` while preserving the original meaning and tone
 
 ### Requirement: Translation task support
 The system SHALL support translation tasks by passing `task: "translate"` and `output_language` to Engine `/polish`.
@@ -69,4 +65,3 @@ The system SHALL accept either pre-transcribed `text` or `audio_base64` in `POST
 #### Scenario: Audio input without STT configured
 - **WHEN** `POST /polish` is called with `audio_base64` but `stt` was not configured
 - **THEN** the engine SHALL return 503 with error code `STT_NOT_CONFIGURED`
-

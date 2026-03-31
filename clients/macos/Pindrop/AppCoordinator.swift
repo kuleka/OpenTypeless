@@ -9,279 +9,16 @@ import Foundation
 import SwiftUI
 import SwiftData
 import Combine
-import AVFoundation
 import AppKit
 import os.log
-
-private final class EventTapRunLoopThread: Thread {
-
-    private let readinessSemaphore = DispatchSemaphore(value: 0)
-    private let stateLock = NSLock()
-    private var runLoop: CFRunLoop?
-    private let keepAlivePort = Port()
-
-    init(name: String) {
-        super.init()
-        self.name = name
-        self.qualityOfService = .userInteractive
-    }
-
-    override func main() {
-        let currentRunLoop = CFRunLoopGetCurrent()
-
-        stateLock.lock()
-        runLoop = currentRunLoop
-        stateLock.unlock()
-
-        RunLoop.current.add(keepAlivePort, forMode: .default)
-        readinessSemaphore.signal()
-
-        while !isCancelled {
-            autoreleasepool {
-                _ = RunLoop.current.run(mode: .default, before: .distantFuture)
-            }
-        }
-
-        stateLock.lock()
-        runLoop = nil
-        stateLock.unlock()
-    }
-
-    func performAndWait(_ block: @escaping (CFRunLoop) -> Void) {
-        startIfNeeded()
-
-        guard let runLoop = currentRunLoop else { return }
-        guard let defaultMode = CFRunLoopMode.defaultMode else { return }
-
-        let completionSemaphore = DispatchSemaphore(value: 0)
-        CFRunLoopPerformBlock(runLoop, defaultMode.rawValue as CFTypeRef) {
-            block(runLoop)
-            completionSemaphore.signal()
-        }
-        CFRunLoopWakeUp(runLoop)
-        completionSemaphore.wait()
-    }
-
-    func stopIfNeeded() {
-        guard let runLoop = currentRunLoop else { return }
-        guard let defaultMode = CFRunLoopMode.defaultMode else { return }
-
-        let completionSemaphore = DispatchSemaphore(value: 0)
-        CFRunLoopPerformBlock(runLoop, defaultMode.rawValue as CFTypeRef) {
-            CFRunLoopStop(runLoop)
-            completionSemaphore.signal()
-        }
-        CFRunLoopWakeUp(runLoop)
-        completionSemaphore.wait()
-        cancel()
-    }
-
-    private func startIfNeeded() {
-        guard !isExecuting && !isFinished else { return }
-        start()
-        readinessSemaphore.wait()
-    }
-
-    private var currentRunLoop: CFRunLoop? {
-        stateLock.lock()
-        defer { stateLock.unlock() }
-        return runLoop
-    }
-}
-
-extension Notification.Name {
-    static let switchModel = Notification.Name("tech.watzon.pindrop.switchModel")
-    static let modelActiveChanged = Notification.Name("tech.watzon.pindrop.modelActiveChanged")
-    static let requestActiveModel = Notification.Name("tech.watzon.pindrop.requestActiveModel")
-    static let rerunOnboarding = Notification.Name("tech.watzon.pindrop.rerunOnboarding")
-}
-
-struct HotkeyConflict: Equatable {
-    let existingIdentifier: String
-    let incomingIdentifier: String
-    let combination: HotkeyRegistrationState.Combination
-
-    var conflictKey: String {
-        [existingIdentifier, incomingIdentifier]
-            .sorted()
-            .joined(separator: "|") + "|\(combination.keyCode)|\(combination.modifiers)"
-    }
-}
-
-struct HotkeyRegistrationState {
-    struct Combination: Hashable {
-        let keyCode: UInt32
-        let modifiers: UInt32
-    }
-
-    private(set) var registeredIdentifiersByCombination: [Combination: String] = [:]
-
-    static func shouldRegisterHotkeys(hasCompletedOnboarding: Bool) -> Bool {
-        hasCompletedOnboarding
-    }
-
-    mutating func register(
-        identifier: String,
-        keyCode: UInt32,
-        modifiers: UInt32
-    ) -> HotkeyConflict? {
-        let combination = Combination(keyCode: keyCode, modifiers: modifiers)
-
-        if let existingIdentifier = registeredIdentifiersByCombination[combination] {
-            return HotkeyConflict(
-                existingIdentifier: existingIdentifier,
-                incomingIdentifier: identifier,
-                combination: combination
-            )
-        }
-
-        registeredIdentifiersByCombination[combination] = identifier
-        return nil
-    }
-}
-
-struct HotkeyBindingSnapshot: Equatable {
-    let hotkey: String
-    let keyCode: Int
-    let modifiers: Int
-}
-
-struct HotkeySettingsSnapshot: Equatable {
-    let hasCompletedOnboarding: Bool
-    let pushToTalk: HotkeyBindingSnapshot
-    let toggle: HotkeyBindingSnapshot
-    let copyLastTranscript: HotkeyBindingSnapshot
-}
-
-struct EngineProviderSettingsSnapshot: Equatable {
-    let provider: String
-    let apiBase: String
-    let model: String
-    let apiKey: String?
-}
-
-struct EngineSettingsSnapshot: Equatable {
-    let host: String
-    let port: Int
-    let sttMode: STTMode
-    let defaultLanguage: AppLanguage
-    let stt: EngineProviderSettingsSnapshot
-    let llm: EngineProviderSettingsSnapshot
-}
-
-struct SettingsObservationSnapshot: Equatable {
-    let outputMode: String
-    let automaticDictionaryLearningEnabled: Bool
-    let selectedInputDeviceUID: String
-    let selectedAppLanguage: AppLanguage
-    let floatingIndicatorEnabled: Bool
-    let floatingIndicatorType: FloatingIndicatorType
-    let aiEnhancementEnabled: Bool
-    let enableUIContext: Bool
-    let vibeLiveSessionEnabled: Bool
-    let hotkeys: HotkeySettingsSnapshot
-    let engine: EngineSettingsSnapshot
-    let engineRuntimeRecheckSequence: Int
-}
 
 @MainActor
 @Observable
 final class AppCoordinator {
 
-    struct EngineStartupHandlers {
-        let health: @MainActor () async throws -> HealthResponse
-        let fetchConfig: @MainActor () async throws -> ConfigResponse
-        let pushConfig: @MainActor (ConfigRequest) async throws -> ConfigStatusResponse
-    }
-
-    struct PolishHandlers {
-        let polish: @MainActor (
-            _ text: String,
-            _ appContext: AppContextInfo?,
-            _ task: PolishTask,
-            _ outputLanguage: String?
-        ) async throws -> PolishService.PolishResult
-    }
-
-    struct RecordingPolishOutcome: Equatable {
-        let finalText: String
-        let originalText: String?
-        let enhancedWithModel: String?
-        let didAttemptPolish: Bool
-        let usedFallback: Bool
-    }
-
-    private enum EngineRuntimeEvaluationTrigger {
-        case startup
-        case settingsChange
-        case manualRecheck
-    }
-
-    private enum EngineConfigurationReadiness {
-        case ready(ConfigRequest)
-        case incomplete(EngineRuntimeState.MissingConfiguration)
-    }
-
     private static var isRunningTests: Bool {
         ProcessInfo.processInfo.environment["PINDROP_TEST_MODE"] == "1"
             || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-    }
-
-    private enum RecordingTriggerSource: String {
-        case statusBarMenu = "status-bar-menu"
-        case hotkeyToggle = "hotkey-toggle"
-        case hotkeyPushToTalk = "hotkey-push-to-talk"
-        case floatingIndicatorStart = "floating-indicator-start"
-        case floatingIndicatorStop = "floating-indicator-stop"
-        case pillIndicatorStop = "pill-indicator-stop"
-        case pillIndicatorStart = "pill-indicator-start"
-        case bubbleIndicatorStart = "bubble-indicator-start"
-        case bubbleIndicatorStop = "bubble-indicator-stop"
-    }
-
-    enum EventTapRecoveryAction: Equatable {
-        case reenable
-        case recreate
-    }
-
-    struct EventTapRecoveryDecision: Equatable {
-        let consecutiveDisableCount: Int
-        let action: EventTapRecoveryAction
-    }
-
-    static func determineEventTapRecovery(
-        now: Date,
-        lastDisableAt: Date?,
-        consecutiveDisableCount: Int,
-        disableLoopWindow: TimeInterval,
-        maxReenableAttemptsBeforeRecreate: Int
-    ) -> EventTapRecoveryDecision {
-        let nextCount: Int
-        if let lastDisableAt,
-           now.timeIntervalSince(lastDisableAt) <= disableLoopWindow {
-            nextCount = consecutiveDisableCount + 1
-        } else {
-            nextCount = 1
-        }
-
-        let recreateThreshold = max(1, maxReenableAttemptsBeforeRecreate)
-        let action: EventTapRecoveryAction = nextCount >= recreateThreshold ? .recreate : .reenable
-
-        return EventTapRecoveryDecision(
-            consecutiveDisableCount: nextCount,
-            action: action
-        )
-    }
-
-    private enum EventTapKind {
-        case escape
-        case modifier
-    }
-
-    private struct EventTapDisableState {
-        var lastDisableAt: Date?
-        var consecutiveDisableCount = 0
-        var lastDisabledTypeRawValue: UInt32?
     }
 
     // MARK: - Services
@@ -322,70 +59,30 @@ final class AppCoordinator {
     let mainWindowController: MainWindowController
     let toastWindowController: ToastWindowController
     
-    private var isStreamingTranscriptionSessionActive = false
-    private var streamingAudioProcessingTask: Task<Void, Never>?
-    private var streamingInsertionUpdateTask: Task<Void, Never>?
     private var mediaTranscriptionTask: Task<Void, Never>?
-    
+
     // MARK: - State
-    
+
     private(set) var activeModelName: String?
-    private(set) var isRecording = false
-    private(set) var isProcessing = false
-    private(set) var error: Error?
-    
-    private var recordingStartTime: Date?
+
     private var cancellables = Set<AnyCancellable>()
-    private var capturedContext: CapturedContext?
-    private var capturedSnapshot: ContextSnapshot?
-    private var capturedAdapterCapabilities: AppAdapterCapabilities?
-    private var capturedRoutingSignal: PromptRoutingSignal?
-    private var contextSessionState: ContextSessionState?
-    private var contextSessionPollTimer: Timer?
-    private var contextSessionAppActivationObserver: NSObjectProtocol?
-    private var lastFocusOrWindowUpdateAt: Date?
-    private let contextSessionPollInterval: TimeInterval = 1.25
-    private let contextSessionFocusUpdateThrottle: TimeInterval = 0.75
-    private var recordingStartAttemptCounter: UInt64 = 0
-    private var reportedHotkeyConflicts = Set<String>()
-    private let appContextAdapterRegistry = AppContextAdapterRegistry()
-    private let promptRoutingResolver: any PromptRoutingResolver = NoOpPromptRoutingResolver()
     private let enableSystemHooks: Bool
     private var lastObservedSettingsSnapshot: SettingsObservationSnapshot?
     private var hasRequestedAccessibilityPermissionThisLaunch = false
     private var hasShownAccessibilityFallbackAlertThisLaunch = false
-    private var floatingIndicatorHiddenUntil: Date?
-    private var floatingIndicatorHiddenTask: Task<Void, Never>?
-    private var activeFloatingIndicatorType: FloatingIndicatorType?
-    private let engineStartupHandlers: EngineStartupHandlers
     private let polishHandlers: PolishHandlers
 
-    // MARK: - Dictionary Replacements
-    
-    /// Stores the last applied dictionary replacements for use in AI enhancement prompts
-    var lastAppliedReplacements: [(original: String, replacement: String)] = []
-    
-    // MARK: - Escape Key Cancellation
-    
-    private var escapeEventTap: CFMachPort?
-    private var escapeRunLoopSource: CFRunLoopSource?
-    private var escapeGlobalMonitor: Any?
-    private var modifierEventTap: CFMachPort?
-    private var modifierRunLoopSource: CFRunLoopSource?
-    private var modifierGlobalMonitor: Any?
-    private let eventTapRunLoopThread = EventTapRunLoopThread(name: "tech.watzon.pindrop.event-tap-runloop")
-    private var escapeEventTapDisableState = EventTapDisableState()
-    private var modifierEventTapDisableState = EventTapDisableState()
-    private var escapeEventTapRecoveryTask: Task<Void, Never>?
-    private var modifierEventTapRecoveryTask: Task<Void, Never>?
-    private var lastEscapeTime: Date?
-    private var lastEscapeSignalTime: Date?
-    private var engineRuntimeEvaluationTask: Task<Void, Never>?
-    private let doubleEscapeThreshold: TimeInterval = 0.4
-    private let duplicateEscapeSignalThreshold: TimeInterval = 0.08
-    private let eventTapRecoveryDelay: Duration = .milliseconds(250)
-    private let eventTapDisableLoopWindow: TimeInterval = 1.0
-    private let maxEventTapReenableAttemptsBeforeRecreate = 3
+    // MARK: - Sub-Coordinators
+
+    let floatingIndicatorCoordinator: FloatingIndicatorCoordinator
+    let hotkeyCoordinator: HotkeyCoordinator
+    let engineRuntimeCoordinator: EngineRuntimeCoordinator
+    let contextSessionCoordinator: ContextSessionCoordinator
+    let recordingCoordinator: RecordingCoordinator
+
+    // MARK: - Event Tap Manager
+
+    let eventTapManager: EventTapManager
     
     // MARK: - Initialization
     
@@ -427,7 +124,7 @@ final class AppCoordinator {
         self.launchAtLoginManager = LaunchAtLoginManager()
         self.updateService = UpdateService()
         self.settingsStore = resolvedSettingsStore
-        self.engineStartupHandlers = engineStartupHandlers ?? EngineStartupHandlers(
+        let resolvedEngineStartupHandlers = engineStartupHandlers ?? EngineStartupHandlers(
             health: { [resolvedSettingsStore] in
                 try await EngineClient(
                     host: resolvedSettingsStore.engineHost,
@@ -463,7 +160,6 @@ final class AppCoordinator {
                 )
             }
         )
-        let resolvedEngineStartupHandlers = self.engineStartupHandlers
         self.engineProcessManager = EngineProcessManager(
             configuration: EngineProcessManager.Configuration(
                 customBinaryPath: resolvedSettingsStore.engineBinaryPath.isEmpty ? nil : resolvedSettingsStore.engineBinaryPath,
@@ -528,6 +224,46 @@ final class AppCoordinator {
         let splashState = SplashScreenState()
         self.splashController = SplashWindowController(state: splashState)
         self.mainWindowController = MainWindowController()
+        self.eventTapManager = EventTapManager(enableSystemHooks: self.enableSystemHooks)
+        self.floatingIndicatorCoordinator = FloatingIndicatorCoordinator(
+            settingsStore: resolvedSettingsStore,
+            floatingIndicatorPresenters: self.floatingIndicatorPresenters
+        )
+        self.hotkeyCoordinator = HotkeyCoordinator(
+            hotkeyManager: self.hotkeyManager,
+            settingsStore: resolvedSettingsStore,
+            toastService: self.toastService
+        )
+        self.engineRuntimeCoordinator = EngineRuntimeCoordinator(
+            settingsStore: resolvedSettingsStore,
+            engineStartupHandlers: resolvedEngineStartupHandlers,
+            toastService: self.toastService
+        )
+        self.contextSessionCoordinator = ContextSessionCoordinator(
+            settingsStore: resolvedSettingsStore,
+            contextEngineService: self.contextEngineService,
+            contextCaptureService: self.contextCaptureService,
+            mentionRewriteService: self.mentionRewriteService,
+            permissionManager: self.permissionManager
+        )
+        self.recordingCoordinator = RecordingCoordinator(
+            audioRecorder: self.audioRecorder,
+            transcriptionService: self.transcriptionService,
+            outputManager: self.outputManager,
+            settingsStore: resolvedSettingsStore,
+            dictionaryStore: self.dictionaryStore,
+            historyStore: self.historyStore,
+            polishHandlers: self.polishHandlers,
+            toastService: self.toastService,
+            mediaPauseService: self.mediaPauseService,
+            contextEngineService: self.contextEngineService,
+            mentionRewriteService: self.mentionRewriteService,
+            permissionManager: self.permissionManager,
+            automaticDictionaryLearningService: self.automaticDictionaryLearningService,
+            floatingIndicatorCoordinator: self.floatingIndicatorCoordinator,
+            contextSessionCoordinator: self.contextSessionCoordinator,
+            engineRuntimeCoordinator: self.engineRuntimeCoordinator
+        )
         self.mainWindowController.setModelContainer(modelContainer)
         self.mainWindowController.configureTranscribeFeature(
             state: mediaTranscriptionState,
@@ -545,11 +281,11 @@ final class AppCoordinator {
         )
 
         self.statusBarController.onToggleRecording = { [weak self] in
-            await self?.handleToggleRecording(source: .statusBarMenu)
+            await self?.recordingCoordinator.handleToggleRecording(source: .statusBarMenu)
         }
 
         self.statusBarController.onCopyLastTranscript = { [weak self] in
-            await self?.handleCopyLastTranscript()
+            await self?.recordingCoordinator.handleTranslateToggle()
         }
 
         self.statusBarController.onPasteLastTranscript = { [weak self] in
@@ -632,12 +368,12 @@ final class AppCoordinator {
         let floatingIndicatorActions = FloatingIndicatorActions(
             onStartRecording: { [weak self] type in
                 Task { @MainActor in
-                    await self?.handleToggleRecording(source: self?.recordingTriggerSourceForIndicatorStart(type) ?? .floatingIndicatorStart)
+                    await self?.recordingCoordinator.handleToggleRecording(source: self?.floatingIndicatorCoordinator.recordingTriggerSourceForIndicatorStart(type) ?? .floatingIndicatorStart)
                 }
             },
             onStopRecording: { [weak self] type in
                 Task { @MainActor in
-                    await self?.handleToggleRecording(source: self?.recordingTriggerSourceForIndicatorStop(type) ?? .floatingIndicatorStop)
+                    await self?.recordingCoordinator.handleToggleRecording(source: self?.floatingIndicatorCoordinator.recordingTriggerSourceForIndicatorStop(type) ?? .floatingIndicatorStop)
                 }
             },
             onCancelRecording: { [weak self] in
@@ -646,7 +382,7 @@ final class AppCoordinator {
                 }
             },
             onHideForOneHour: { [weak self] in
-                self?.handleHideFloatingIndicatorForOneHour()
+                self?.floatingIndicatorCoordinator.handleHideFloatingIndicatorForOneHour()
             },
             onReportIssue: { [weak self] in
                 self?.handleReportIssue()
@@ -688,11 +424,89 @@ final class AppCoordinator {
             pushToTalkHotkey: settingsStore.pushToTalkHotkey
         )
 
+        self.hotkeyCoordinator.onToggleRecording = { [weak self] source in
+            await self?.recordingCoordinator.handleToggleRecording(source: source)
+        }
+        self.hotkeyCoordinator.onPushToTalkStart = { [weak self] in
+            await self?.recordingCoordinator.handlePushToTalkStart()
+        }
+        self.hotkeyCoordinator.onPushToTalkEnd = { [weak self] in
+            await self?.recordingCoordinator.handlePushToTalkEnd()
+        }
+        self.hotkeyCoordinator.onTranslateToggle = { [weak self] in
+            await self?.recordingCoordinator.handleTranslateToggle()
+        }
+
+        self.eventTapManager.onCancelCurrentOperation = { [weak self] in
+            self?.recordingCoordinator.cancelCurrentOperation()
+        }
+        self.eventTapManager.onResetProcessingState = { [weak self] in
+            self?.recordingCoordinator.resetProcessingState()
+        }
+        self.eventTapManager.onNonEscapeKeyDown = { [weak self] in
+            self?.contextSessionCoordinator.scheduleFocusOrWindowContextRefreshIfNeeded()
+        }
+        self.eventTapManager.onModifierFlagsChanged = { [weak self] event in
+            self?.hotkeyManager.handleModifierFlagsChanged(event: event)
+        }
+        self.eventTapManager.isRecordingProvider = { [weak self] in
+            self?.recordingCoordinator.isRecording ?? false
+        }
+        self.eventTapManager.isProcessingProvider = { [weak self] in
+            self?.recordingCoordinator.isProcessing ?? false
+        }
+        self.eventTapManager.isFloatingIndicatorEnabledProvider = { [weak self] in
+            self?.settingsStore.floatingIndicatorEnabled ?? false
+        }
+        self.eventTapManager.showEscapePrimed = { [weak self] in
+            self?.floatingIndicatorState.showEscapePrimed()
+        }
+        self.eventTapManager.clearEscapePrimed = { [weak self] in
+            self?.floatingIndicatorState.clearEscapePrimed()
+        }
+
+        self.contextSessionCoordinator.isRecordingProvider = { [weak self] in
+            self?.recordingCoordinator.isRecording ?? false
+        }
+        self.contextSessionCoordinator.recordingStartTimeProvider = { [weak self] in
+            self?.recordingCoordinator.recordingStartTime
+        }
+
+        self.recordingCoordinator.onStatusBarRecording = { [weak self] in
+            self?.statusBarController.setRecordingState()
+        }
+        self.recordingCoordinator.onStatusBarProcessing = { [weak self] in
+            self?.statusBarController.setProcessingState()
+        }
+        self.recordingCoordinator.onStatusBarIdle = { [weak self] in
+            self?.statusBarController.setIdleState()
+        }
+        self.recordingCoordinator.onUpdateMenuState = { [weak self] in
+            self?.statusBarController.updateMenuState()
+        }
+        self.recordingCoordinator.onUpdateRecentTranscriptsMenu = { [weak self] in
+            self?.updateRecentTranscriptsMenu()
+        }
+        self.recordingCoordinator.onEnsureAccessibilityForDirectInsert = { [weak self] trigger, showFallbackAlert in
+            self?.ensureAccessibilityPermissionForDirectInsert(trigger: trigger, showFallbackAlert: showFallbackAlert)
+        }
+        self.recordingCoordinator.onEnsureGlobalKeyMonitors = { [weak self] in
+            self?.ensureGlobalKeyMonitorsIfPossible()
+        }
+        self.recordingCoordinator.onCancelMediaTranscription = { [weak self] in
+            guard let self else { return }
+            self.mediaTranscriptionTask?.cancel()
+            self.mediaTranscriptionTask = nil
+            self.mediaTranscriptionState.showLibrary()
+            self.mediaTranscriptionState.libraryMessage = "Transcription canceled."
+            self.mediaTranscriptionState.clearCurrentJob()
+        }
+
         self.lastObservedSettingsSnapshot = currentSettingsObservationSnapshot()
         if self.enableSystemHooks {
-            setupHotkeys()
-            setupEscapeKeyMonitor()
-            setupModifierKeyMonitor()
+            hotkeyCoordinator.setupHotkeys()
+            eventTapManager.setupEscapeKeyMonitor()
+            eventTapManager.setupModifierKeyMonitor()
         } else {
             Log.app.debug("Skipping global hotkey and key monitor setup in test environment")
         }
@@ -780,7 +594,7 @@ final class AppCoordinator {
             engineHealthCheck: { [weak self] in
                 guard let self else { return false }
                 do {
-                    _ = try await self.engineStartupHandlers.health()
+                    _ = try await self.engineRuntimeCoordinator.engineStartupHandlers.health()
                     return true
                 } catch {
                     return false
@@ -807,365 +621,12 @@ final class AppCoordinator {
         Log.boot.info("finishPostOnboardingSetup begin")
         seedBuiltInPresetsIfNeeded()
         refreshStatusBarPresets()
-        registerHotkeysFromSettings()
+        hotkeyCoordinator.registerHotkeysFromSettings()
 
         ensureAccessibilityPermissionForDirectInsert(trigger: "post-onboarding", showFallbackAlert: false)
-        await syncEngineConfigurationOnStartup()
-        updateVibeRuntimeStateFromSettings()
+        await engineRuntimeCoordinator.syncEngineConfigurationOnStartup()
+        contextSessionCoordinator.updateVibeRuntimeStateFromSettings()
         Log.boot.info("finishPostOnboardingSetup complete")
-    }
-
-    func syncEngineConfigurationOnStartup() async {
-        await evaluateEngineRuntime(trigger: .startup)
-    }
-
-    func polishTranscribedTextIfNeeded(
-        _ text: String,
-        appContext: AppContextInfo? = nil
-    ) async -> RecordingPolishOutcome {
-        guard settingsStore.aiEnhancementEnabled else {
-            return RecordingPolishOutcome(
-                finalText: text,
-                originalText: nil,
-                enhancedWithModel: nil,
-                didAttemptPolish: false,
-                usedFallback: false
-            )
-        }
-
-        let runtimeState = settingsStore.engineRuntimeState
-        guard runtimeState.isReady else {
-            toastService.show(
-                ToastPayload(
-                    message: localEngineUnavailableMessage(for: runtimeState),
-                    style: .error
-                )
-            )
-            return RecordingPolishOutcome(
-                finalText: text,
-                originalText: text,
-                enhancedWithModel: nil,
-                didAttemptPolish: false,
-                usedFallback: true
-            )
-        }
-
-        do {
-            let result = try await polishHandlers.polish(text, appContext, .polish, nil)
-            if result.usedFallback {
-                toastService.show(
-                    ToastPayload(
-                        message: polishFallbackMessage(for: result.warningMessage),
-                        style: .error
-                    )
-                )
-            }
-
-            return RecordingPolishOutcome(
-                finalText: result.text,
-                originalText: result.rawTranscript,
-                enhancedWithModel: result.usedFallback ? nil : (result.modelUsed ?? settingsStore.engineLLMModel),
-                didAttemptPolish: true,
-                usedFallback: result.usedFallback
-            )
-        } catch let error as EngineClientError {
-            Log.app.error("Engine polish failed: \(error)")
-            updateEngineRuntimeState(for: error, context: "polish")
-            toastService.show(
-                ToastPayload(
-                    message: localEngineUnavailableMessage(for: settingsStore.engineRuntimeState),
-                    style: .error
-                )
-            )
-            return RecordingPolishOutcome(
-                finalText: text,
-                originalText: text,
-                enhancedWithModel: nil,
-                didAttemptPolish: true,
-                usedFallback: true
-            )
-        } catch {
-            Log.app.error("Engine polish failed: \(error)")
-            settingsStore.updateEngineRuntimeState(
-                .error(detail: "Engine polish failed: \(error.localizedDescription)")
-            )
-            toastService.show(
-                ToastPayload(
-                    message: localEngineUnavailableMessage(for: settingsStore.engineRuntimeState),
-                    style: .error
-                )
-            )
-            return RecordingPolishOutcome(
-                finalText: text,
-                originalText: text,
-                enhancedWithModel: nil,
-                didAttemptPolish: true,
-                usedFallback: true
-            )
-        }
-    }
-
-    private static func engineDefaultLanguageCode(for language: AppLanguage) -> String {
-        language.whisperLanguageCode ?? language.rawValue
-    }
-
-    private func currentEngineConfigurationReadiness() -> EngineConfigurationReadiness {
-        let llmConfiguration = settingsStore.currentEngineLLMProviderConfiguration()
-        let sttConfiguration = settingsStore.currentEngineSTTProviderConfiguration()
-        let defaultLanguage = Self.engineDefaultLanguageCode(for: settingsStore.selectedAppLanguage)
-
-        switch settingsStore.sttMode {
-        case .local:
-            guard let llmConfiguration else {
-                return .incomplete(.llm)
-            }
-
-            return .ready(
-                ConfigRequest(
-                    stt: nil,
-                    llm: llmConfiguration,
-                    defaultLanguage: defaultLanguage
-                )
-            )
-        case .remote:
-            switch (sttConfiguration, llmConfiguration) {
-            case let (.some(sttConfiguration), .some(llmConfiguration)):
-                return .ready(
-                    ConfigRequest(
-                        stt: sttConfiguration,
-                        llm: llmConfiguration,
-                        defaultLanguage: defaultLanguage
-                    )
-                )
-            case (.none, .none):
-                return .incomplete(.sttAndLLM)
-            case (.none, .some):
-                return .incomplete(.stt)
-            case (.some, .none):
-                return .incomplete(.llm)
-            }
-        }
-    }
-
-    private func scheduleEngineConfigurationSync() {
-        settingsStore.updateEngineRuntimeState(
-            .checking(detail: "Rechecking Engine after settings changes...")
-        )
-
-        engineRuntimeEvaluationTask?.cancel()
-        engineRuntimeEvaluationTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(350))
-            guard let self, !Task.isCancelled else { return }
-            await self.evaluateEngineRuntime(trigger: .settingsChange)
-        }
-    }
-
-    private func requestManualEngineRuntimeRecheck() {
-        engineRuntimeEvaluationTask?.cancel()
-        engineRuntimeEvaluationTask = Task { @MainActor [weak self] in
-            guard let self, !Task.isCancelled else { return }
-            await self.evaluateEngineRuntime(trigger: .manualRecheck)
-        }
-    }
-
-    private func evaluateEngineRuntime(trigger: EngineRuntimeEvaluationTrigger) async {
-        let checkingDetail: String
-        switch trigger {
-        case .startup:
-            checkingDetail = "Checking Engine runtime..."
-        case .settingsChange:
-            checkingDetail = "Rechecking Engine after settings changes..."
-        case .manualRecheck:
-            checkingDetail = "Rechecking Engine runtime..."
-        }
-
-        settingsStore.updateEngineRuntimeState(.checking(detail: checkingDetail))
-
-        let healthResponse: HealthResponse
-        do {
-            healthResponse = try await engineStartupHandlers.health()
-        } catch let error as EngineClientError {
-            updateEngineRuntimeState(for: error, context: "health check")
-            if error == .connectionFailed {
-                Log.boot.info("Engine unavailable during \(String(describing: trigger)) health check; continuing with degraded runtime")
-            } else {
-                Log.boot.warning("Engine health check failed during \(String(describing: trigger)): \(error.localizedDescription)")
-            }
-            return
-        } catch {
-            let detail = "Engine health check failed: \(error.localizedDescription)"
-            settingsStore.updateEngineRuntimeState(.error(detail: detail))
-            Log.boot.warning(detail)
-            return
-        }
-
-        switch currentEngineConfigurationReadiness() {
-        case .incomplete(let missingConfiguration):
-            settingsStore.updateEngineRuntimeState(
-                .needsConfiguration(
-                    missingConfiguration,
-                    detail: missingConfigurationDetail(for: missingConfiguration)
-                )
-            )
-            return
-        case .ready(let requestBody):
-            settingsStore.updateEngineRuntimeState(.syncing(version: healthResponse.version))
-            do {
-                _ = try await engineStartupHandlers.pushConfig(requestBody)
-                settingsStore.updateEngineRuntimeState(
-                    .ready(
-                        version: healthResponse.version,
-                        detail: readyRuntimeDetail(for: settingsStore.sttMode)
-                    )
-                )
-
-                switch trigger {
-                case .startup:
-                    Log.boot.info("Engine config synchronized on startup")
-                case .settingsChange:
-                    Log.boot.info("Engine config synchronized after local settings change")
-                case .manualRecheck:
-                    Log.boot.info("Engine runtime recheck succeeded")
-                }
-            } catch let error as EngineClientError {
-                updateEngineRuntimeState(
-                    for: error,
-                    context: "configuration sync"
-                )
-                Log.boot.warning("Engine config synchronization failed during \(String(describing: trigger)): \(error.localizedDescription)")
-            } catch {
-                let detail = "Engine configuration sync failed: \(error.localizedDescription)"
-                settingsStore.updateEngineRuntimeState(.error(detail: detail))
-                Log.boot.warning(detail)
-            }
-        }
-    }
-
-    private func readyRuntimeDetail(for mode: STTMode) -> String {
-        switch mode {
-        case .local:
-            return "Engine is ready for local dictation with text polishing."
-        case .remote:
-            return "Engine is ready for remote transcription and text polishing."
-        }
-    }
-
-    private func missingConfigurationDetail(
-        for missingConfiguration: EngineRuntimeState.MissingConfiguration
-    ) -> String {
-        switch (settingsStore.sttMode, missingConfiguration) {
-        case (.local, _):
-            return "Add an LLM provider base URL, model, and API key to enable Engine polish."
-        case (.remote, .llm):
-            return "Add an LLM provider base URL, model, and API key before using remote Engine transcription."
-        case (.remote, .stt):
-            return "Add a Remote STT provider base URL, model, and API key before using Engine transcription."
-        case (.remote, .sttAndLLM):
-            return "Add both Remote STT and LLM provider settings before using Engine transcription."
-        }
-    }
-
-    private func updateEngineRuntimeState(
-        for error: EngineClientError,
-        context: String
-    ) {
-        switch error {
-        case .connectionFailed:
-            settingsStore.updateEngineRuntimeState(
-                .offline(
-                    detail: "Engine is not reachable at \(settingsStore.engineHost):\(settingsStore.enginePort)."
-                )
-            )
-        case .sttNotConfigured:
-            settingsStore.updateEngineRuntimeState(
-                .needsConfiguration(
-                    .stt,
-                    detail: missingConfigurationDetail(for: .stt)
-                )
-            )
-        case .notConfigured:
-            settingsStore.updateEngineRuntimeState(
-                .needsConfiguration(
-                    .llm,
-                    detail: missingConfigurationDetail(for: .llm)
-                )
-            )
-        case .validationError(let message),
-             .llmFailure(let message),
-             .sttFailure(let message):
-            settingsStore.updateEngineRuntimeState(
-                .error(detail: "Engine \(context) failed: \(message)")
-            )
-        case .apiError(_, _, let message):
-            settingsStore.updateEngineRuntimeState(
-                .error(detail: "Engine \(context) failed: \(message)")
-            )
-        case .invalidBaseURL:
-            settingsStore.updateEngineRuntimeState(
-                .error(detail: "Engine host or port is invalid.")
-            )
-        case .invalidResponse:
-            settingsStore.updateEngineRuntimeState(
-                .error(detail: "Engine returned an invalid response during \(context).")
-            )
-        }
-    }
-
-    private func polishFallbackMessage(for warningMessage: String?) -> String {
-        let normalizedWarning = warningMessage?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let normalizedWarning, !normalizedWarning.isEmpty {
-            return "Text polishing failed (\(normalizedWarning)). Transcription inserted without polishing."
-        }
-
-        return "Text polishing failed. Transcription inserted without polishing."
-    }
-
-    private func polishFallbackMessage(for error: EngineClientError) -> String {
-        switch error {
-        case .connectionFailed:
-            return "Engine is offline. Transcription inserted without polishing."
-        case .notConfigured:
-            return "Engine is not configured for polishing. Transcription inserted without polishing."
-        case .llmFailure(let message):
-            return polishFallbackMessage(for: message)
-        default:
-            return "Text polishing failed. Transcription inserted without polishing."
-        }
-    }
-
-    private func localEngineUnavailableMessage(for runtimeState: EngineRuntimeState) -> String {
-        switch runtimeState.phase {
-        case .offline:
-            return "Engine is offline. Local transcription was inserted without polishing. Start Engine, then press Recheck in Settings."
-        case .needsConfiguration:
-            return "Engine polish is not ready. Local transcription was inserted without polishing. Finish the missing Engine setup, then press Recheck in Settings."
-        case .checking, .syncing:
-            return "Engine is still checking configuration. Local transcription was inserted without polishing."
-        case .error:
-            return "Engine needs attention. Local transcription was inserted without polishing. Fix the Engine setup, then press Recheck in Settings."
-        case .ready:
-            return "Text polishing failed. Transcription inserted without polishing."
-        }
-    }
-
-    private func remoteEngineBlockedMessage(for runtimeState: EngineRuntimeState) -> String {
-        switch runtimeState.phase {
-        case .offline:
-            return "Engine is offline. Start Engine or switch Transcription Mode back to Local in Settings."
-        case .needsConfiguration:
-            return "Remote Engine transcription is not ready. Finish the missing Engine setup or switch Transcription Mode back to Local."
-        case .checking, .syncing:
-            return "Engine is still checking configuration. Try again in a moment or switch Transcription Mode back to Local."
-        case .error:
-            return "Engine needs attention before remote transcription can continue. Fix the Engine setup or switch Transcription Mode back to Local."
-        case .ready:
-            return "Engine transcription is not ready yet."
-        }
-    }
-
-    private func handleTranscriptionRuntimeFailure(_ error: TranscriptionService.TranscriptionError) {
-        guard case .engineRuntimeFailure(let engineError) = error else { return }
-        updateEngineRuntimeState(for: engineError, context: "transcription")
     }
 
     private func seedBuiltInPresetsIfNeeded() {
@@ -1237,7 +698,7 @@ final class AppCoordinator {
     }
 
     private func handleModelLoadError(_ error: Error, context: String) {
-        self.error = error
+        self.recordingCoordinator.error = error
         Log.app.error("\(context): \(error)")
 
         let errorMessage = (error as? LocalizedError)?.errorDescription ?? ""
@@ -1264,7 +725,7 @@ final class AppCoordinator {
         }
 
         ensureAccessibilityPermissionForDirectInsert(trigger: "startup", showFallbackAlert: false)
-        await syncEngineConfigurationOnStartup()
+        await engineRuntimeCoordinator.syncEngineConfigurationOnStartup()
 
         var modelName = settingsStore.selectedModel
 
@@ -1341,211 +802,13 @@ final class AppCoordinator {
         updateRecentTranscriptsMenu()
         await refreshStatusBarModelMenu()
         
-        updateFloatingIndicatorVisibility()
+        floatingIndicatorCoordinator.updateFloatingIndicatorVisibility()
 
-        updateVibeRuntimeStateFromSettings()
+        contextSessionCoordinator.updateVibeRuntimeStateFromSettings()
         Log.boot.info("startNormalOperation complete")
     }
 
-    // MARK: - Hotkey Setup
-    
-    private func setupHotkeys() {
-        registerHotkeysFromSettings()
-    }
-    
-    private func registerHotkeysFromSettings() {
-        guard enableSystemHooks else { return }
-
-        hotkeyManager.unregisterAll()
-        reportedHotkeyConflicts.removeAll()
-        guard HotkeyRegistrationState.shouldRegisterHotkeys(hasCompletedOnboarding: settingsStore.hasCompletedOnboarding) else {
-            Log.hotkey.info("Skipping hotkey registration until onboarding is complete")
-            return
-        }
-
-        var registrationState = HotkeyRegistrationState()
-
-        if !settingsStore.pushToTalkHotkey.isEmpty,
-           let binding = validatedHotkeyBinding(
-               displayName: "Push-to-Talk",
-               hotkeyString: settingsStore.pushToTalkHotkey,
-               keyCodeValue: settingsStore.pushToTalkHotkeyCode,
-               modifiersValue: settingsStore.pushToTalkHotkeyModifiers
-           ) {
-            if canRegisterHotkey(
-                identifier: "push-to-talk",
-                displayName: "Push-to-Talk",
-                hotkeyString: settingsStore.pushToTalkHotkey,
-                keyCode: binding.keyCode,
-                modifiers: binding.modifiers,
-                registrationState: &registrationState
-            ) {
-                let didRegister = hotkeyManager.registerHotkey(
-                    keyCode: binding.keyCode,
-                    modifiers: binding.modifiers,
-                    identifier: "push-to-talk",
-                    mode: .pushToTalk,
-                    onKeyDown: { [weak self] in
-                        Task { @MainActor in
-                            await self?.handlePushToTalkStart()
-                        }
-                    },
-                    onKeyUp: { [weak self] in
-                        Task { @MainActor in
-                            await self?.handlePushToTalkEnd()
-                        }
-                    }
-                )
-
-                if !didRegister {
-                    handleHotkeyRegistrationFailure(displayName: "Push-to-Talk", hotkeyString: settingsStore.pushToTalkHotkey)
-                }
-            }
-        }
-
-        if !settingsStore.toggleHotkey.isEmpty,
-           let binding = validatedHotkeyBinding(
-               displayName: "Toggle Recording",
-               hotkeyString: settingsStore.toggleHotkey,
-               keyCodeValue: settingsStore.toggleHotkeyCode,
-               modifiersValue: settingsStore.toggleHotkeyModifiers
-           ) {
-            if canRegisterHotkey(
-                identifier: "toggle-recording",
-                displayName: "Toggle Recording",
-                hotkeyString: settingsStore.toggleHotkey,
-                keyCode: binding.keyCode,
-                modifiers: binding.modifiers,
-                registrationState: &registrationState
-            ) {
-                let didRegister = hotkeyManager.registerHotkey(
-                    keyCode: binding.keyCode,
-                    modifiers: binding.modifiers,
-                    identifier: "toggle-recording",
-                    mode: .toggle,
-                    onKeyDown: { [weak self] in
-                        Task { @MainActor in
-                            await self?.handleToggleRecording(source: .hotkeyToggle)
-                        }
-                    },
-                    onKeyUp: nil
-                )
-
-                if !didRegister {
-                    handleHotkeyRegistrationFailure(displayName: "Toggle Recording", hotkeyString: settingsStore.toggleHotkey)
-                }
-            }
-        }
-
-        if !settingsStore.copyLastTranscriptHotkey.isEmpty,
-           let binding = validatedHotkeyBinding(
-               displayName: "Copy Last Transcript",
-               hotkeyString: settingsStore.copyLastTranscriptHotkey,
-               keyCodeValue: settingsStore.copyLastTranscriptHotkeyCode,
-               modifiersValue: settingsStore.copyLastTranscriptHotkeyModifiers
-           ) {
-            Log.hotkey.info("Registering copy-last-transcript: keyCode=\(binding.keyCode), modifiers=0x\(String(binding.modifiers.rawValue, radix: 16)), string=\(self.settingsStore.copyLastTranscriptHotkey)")
-
-            if canRegisterHotkey(
-                identifier: "copy-last-transcript",
-                displayName: "Copy Last Transcript",
-                hotkeyString: settingsStore.copyLastTranscriptHotkey,
-                keyCode: binding.keyCode,
-                modifiers: binding.modifiers,
-                registrationState: &registrationState
-            ) {
-                let didRegister = hotkeyManager.registerHotkey(
-                    keyCode: binding.keyCode,
-                    modifiers: binding.modifiers,
-                    identifier: "copy-last-transcript",
-                    mode: .toggle,
-                    onKeyDown: { [weak self] in
-                        Task { @MainActor in
-                            await self?.handleCopyLastTranscript()
-                        }
-                    },
-                    onKeyUp: nil
-                )
-
-                if !didRegister {
-                    handleHotkeyRegistrationFailure(displayName: "Copy Last Transcript", hotkeyString: settingsStore.copyLastTranscriptHotkey)
-                }
-            }
-        }
-
-    }
-    private func validatedHotkeyBinding(
-        displayName: String,
-        hotkeyString: String,
-        keyCodeValue: Int,
-        modifiersValue: Int
-    ) -> (keyCode: UInt32, modifiers: HotkeyManager.ModifierFlags)? {
-        guard let keyCode = UInt32(exactly: keyCodeValue),
-              let modifiersRawValue = UInt32(exactly: modifiersValue) else {
-            Log.hotkey.error("Invalid hotkey values for \(displayName): string=\(hotkeyString), keyCode=\(keyCodeValue), modifiers=\(modifiersValue)")
-            AlertManager.shared.showGenericErrorAlert(
-                title: "Invalid Hotkey Configuration",
-                message: "The saved hotkey for \(displayName) is invalid. Re-record this hotkey in Settings."
-            )
-            return nil
-        }
-        return (keyCode: keyCode, modifiers: HotkeyManager.ModifierFlags(rawValue: modifiersRawValue))
-    }
-    private func handleHotkeyRegistrationFailure(displayName: String, hotkeyString: String) {
-        Log.hotkey.error("Failed to register hotkey for \(displayName): \(hotkeyString)")
-        AlertManager.shared.showGenericErrorAlert(
-            title: "Hotkey Registration Failed",
-            message: "Could not register '\(hotkeyString)' for \(displayName). Choose a different shortcut in Settings."
-        )
-    }
-
-    private func canRegisterHotkey(
-        identifier: String,
-        displayName: String,
-        hotkeyString: String,
-        keyCode: UInt32,
-        modifiers: HotkeyManager.ModifierFlags,
-        registrationState: inout HotkeyRegistrationState
-    ) -> Bool {
-        if let conflict = registrationState.register(
-            identifier: identifier,
-            keyCode: keyCode,
-            modifiers: modifiers.rawValue
-        ) {
-            let existingDisplayName = hotkeyDisplayName(for: conflict.existingIdentifier)
-            let conflictKey = conflict.conflictKey
-
-            Log.hotkey.error(
-                "Hotkey conflict detected for \(hotkeyString): \(existingDisplayName) conflicts with \(displayName). Ignoring \(displayName)"
-            )
-
-            if !reportedHotkeyConflicts.contains(conflictKey) {
-                reportedHotkeyConflicts.insert(conflictKey)
-                AlertManager.shared.showHotkeyConflictAlert(
-                    hotkey: hotkeyString,
-                    firstAction: existingDisplayName,
-                    secondAction: displayName
-                )
-            }
-
-            return false
-        }
-
-        return true
-    }
-
-    private func hotkeyDisplayName(for identifier: String) -> String {
-        switch identifier {
-        case "toggle-recording":
-            return "Toggle Recording"
-        case "push-to-talk":
-            return "Push-to-Talk"
-        case "copy-last-transcript":
-            return "Copy Last Transcript"
-        default:
-            return identifier
-        }
-    }
+    // Hotkey methods live in HotkeyCoordinator
     
     // MARK: - Settings Observation
 
@@ -1554,7 +817,6 @@ final class AppCoordinator {
             host: settingsStore.engineHost,
             port: settingsStore.enginePort,
             sttMode: settingsStore.sttMode,
-            defaultLanguage: settingsStore.selectedAppLanguage,
             stt: EngineProviderSettingsSnapshot(
                 provider: settingsStore.selectedEngineSTTProvider.rawValue,
                 apiBase: settingsStore.engineSTTAPIBase.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -1593,10 +855,10 @@ final class AppCoordinator {
                     keyCode: settingsStore.toggleHotkeyCode,
                     modifiers: settingsStore.toggleHotkeyModifiers
                 ),
-                copyLastTranscript: HotkeyBindingSnapshot(
-                    hotkey: settingsStore.copyLastTranscriptHotkey,
-                    keyCode: settingsStore.copyLastTranscriptHotkeyCode,
-                    modifiers: settingsStore.copyLastTranscriptHotkeyModifiers
+                translate: HotkeyBindingSnapshot(
+                    hotkey: settingsStore.translateHotkey,
+                    keyCode: settingsStore.translateHotkeyCode,
+                    modifiers: settingsStore.translateHotkeyModifiers
                 )
             ),
             engine: currentEngineObservationSnapshot(),
@@ -1631,13 +893,17 @@ final class AppCoordinator {
                         || previousSnapshot.floatingIndicatorType != snapshot.floatingIndicatorType {
                         if (!previousSnapshot.floatingIndicatorEnabled && snapshot.floatingIndicatorEnabled)
                             || previousSnapshot.floatingIndicatorType != snapshot.floatingIndicatorType {
-                            self.clearFloatingIndicatorTemporaryHiddenState()
+                            self.floatingIndicatorCoordinator.clearFloatingIndicatorTemporaryHiddenState()
                         }
-                        self.updateFloatingIndicatorVisibility(previousType: previousSnapshot.floatingIndicatorType)
+                        self.floatingIndicatorCoordinator.updateFloatingIndicatorVisibility(
+                            isRecording: self.recordingCoordinator.isRecording,
+                            isProcessing: self.recordingCoordinator.isProcessing,
+                            previousType: previousSnapshot.floatingIndicatorType
+                        )
                     }
 
                     if previousSnapshot.hotkeys != snapshot.hotkeys {
-                        self.registerHotkeysFromSettings()
+                        self.hotkeyCoordinator.registerHotkeysFromSettings()
                         self.floatingIndicatorState.updateHotkeys(
                             toggleHotkey: self.settingsStore.toggleHotkey,
                             pushToTalkHotkey: self.settingsStore.pushToTalkHotkey
@@ -1655,1770 +921,29 @@ final class AppCoordinator {
                     }
 
                     if previousSnapshot.engineRuntimeRecheckSequence != snapshot.engineRuntimeRecheckSequence {
-                        self.requestManualEngineRuntimeRecheck()
+                        self.engineRuntimeCoordinator.requestManualEngineRuntimeRecheck()
                     } else if previousSnapshot.engine != snapshot.engine {
-                        self.scheduleEngineConfigurationSync()
+                        self.engineRuntimeCoordinator.scheduleEngineConfigurationSync()
                     }
 
                     self.statusBarController.updateDynamicItems()
-                    if self.isRecording {
-                        if self.shouldRunLiveContextSession() {
-                            self.startLiveContextSessionIfNeeded(initialSnapshot: self.capturedSnapshot)
+                    if self.recordingCoordinator.isRecording {
+                        if self.contextSessionCoordinator.shouldRunLiveContextSession() {
+                            self.contextSessionCoordinator.startLiveContextSessionIfNeeded(initialSnapshot: self.contextSessionCoordinator.capturedSnapshot)
                         } else {
-                            self.stopLiveContextSession()
+                            self.contextSessionCoordinator.stopLiveContextSession()
                         }
                     } else if previousSnapshot.aiEnhancementEnabled != snapshot.aiEnhancementEnabled
                         || previousSnapshot.enableUIContext != snapshot.enableUIContext
                         || previousSnapshot.vibeLiveSessionEnabled != snapshot.vibeLiveSessionEnabled {
-                        self.updateVibeRuntimeStateFromSettings()
+                        self.contextSessionCoordinator.updateVibeRuntimeStateFromSettings()
                     }
                 }
             }
             .store(in: &cancellables)
     }
     
-    private func updateFloatingIndicatorVisibility(previousType: FloatingIndicatorType? = nil) {
-        guard !isFloatingIndicatorTemporarilyHidden() else {
-            hideAllFloatingIndicators()
-            return
-        }
-
-        guard settingsStore.floatingIndicatorEnabled else {
-            hideAllFloatingIndicators()
-            return
-        }
-
-        let selectedType = configuredFloatingIndicatorType()
-        
-        if isRecording || isProcessing {
-            if previousType != selectedType {
-                let oldType = activeFloatingIndicatorType ?? previousType ?? selectedType
-                if oldType != selectedType {
-                    floatingIndicatorPresenters[oldType]?.hide()
-                    activeFloatingIndicatorType = selectedType
-                    floatingIndicatorPresenters[selectedType]?.showForCurrentState()
-                }
-            }
-            return
-        }
-
-        hideAllFloatingIndicators(except: selectedType)
-        floatingIndicatorPresenters[selectedType]?.showIdleIndicator()
-    }
-
-    private func configuredFloatingIndicatorType() -> FloatingIndicatorType {
-        settingsStore.selectedFloatingIndicatorType
-    }
-
-    private func recordingTriggerSourceForIndicatorStart(_ type: FloatingIndicatorType) -> RecordingTriggerSource {
-        switch type {
-        case .pill:
-            .pillIndicatorStart
-        case .notch:
-            .floatingIndicatorStart
-        case .bubble:
-            .bubbleIndicatorStart
-        }
-    }
-
-    private func recordingTriggerSourceForIndicatorStop(_ type: FloatingIndicatorType) -> RecordingTriggerSource {
-        switch type {
-        case .pill:
-            .pillIndicatorStop
-        case .notch:
-            .floatingIndicatorStop
-        case .bubble:
-            .bubbleIndicatorStop
-        }
-    }
-
-    private func hideAllFloatingIndicators(except selectedType: FloatingIndicatorType? = nil) {
-        for (type, presenter) in floatingIndicatorPresenters where type != selectedType {
-            presenter.hide()
-        }
-    }
-
-    private func startRecordingIndicatorSession() {
-        guard settingsStore.floatingIndicatorEnabled else { return }
-
-        let selectedType = configuredFloatingIndicatorType()
-        activeFloatingIndicatorType = selectedType
-        hideAllFloatingIndicators(except: selectedType)
-        floatingIndicatorPresenters[selectedType]?.startRecording()
-    }
-
-    private func transitionRecordingIndicatorToProcessing() {
-        guard settingsStore.floatingIndicatorEnabled else {
-            finishIndicatorSession()
-            return
-        }
-
-        let activeType = activeFloatingIndicatorType ?? configuredFloatingIndicatorType()
-        floatingIndicatorPresenters[activeType]?.transitionToProcessing()
-    }
-
-    private func startProcessingIndicatorSession() {
-        guard settingsStore.floatingIndicatorEnabled else { return }
-        startRecordingIndicatorSession()
-        transitionRecordingIndicatorToProcessing()
-    }
-
-    private func finishIndicatorSession() {
-        for presenter in floatingIndicatorPresenters.values {
-            presenter.finishProcessing()
-        }
-        activeFloatingIndicatorType = nil
-
-        guard settingsStore.floatingIndicatorEnabled else {
-            hideAllFloatingIndicators()
-            return
-        }
-        updateFloatingIndicatorVisibility()
-    }
-
-    private func isFloatingIndicatorTemporarilyHidden() -> Bool {
-        guard let hiddenUntil = floatingIndicatorHiddenUntil else { return false }
-        if Date() >= hiddenUntil {
-            floatingIndicatorHiddenUntil = nil
-            return false
-        }
-        return true
-    }
-
-    private func clearFloatingIndicatorTemporaryHiddenState() {
-        floatingIndicatorHiddenUntil = nil
-        floatingIndicatorHiddenTask?.cancel()
-        floatingIndicatorHiddenTask = nil
-    }
-
-    // MARK: - Live Session Context
-
-    private func shouldRunLiveContextSession() -> Bool {
-        settingsStore.aiEnhancementEnabled &&
-            settingsStore.enableUIContext &&
-            settingsStore.vibeLiveSessionEnabled
-    }
-
-    private func updateVibeRuntimeStateFromSettings() {
-        guard settingsStore.aiEnhancementEnabled else {
-            settingsStore.updateVibeRuntimeState(.degraded, detail: "AI enhancement is disabled.")
-            return
-        }
-
-        guard settingsStore.enableUIContext else {
-            settingsStore.updateVibeRuntimeState(.degraded, detail: "Vibe mode is disabled.")
-            return
-        }
-
-        guard settingsStore.vibeLiveSessionEnabled else {
-            settingsStore.updateVibeRuntimeState(.limited, detail: "Live session updates are disabled.")
-            return
-        }
-
-        if let contextSessionState {
-            let detail = contextEngineService.deriveRuntimeDetail(
-                for: contextSessionState.latestSnapshot,
-                runtimeState: contextSessionState.runtimeState
-            )
-            settingsStore.updateVibeRuntimeState(contextSessionState.runtimeState, detail: detail)
-            return
-        }
-
-        if permissionManager.checkAccessibilityPermission() {
-            settingsStore.updateVibeRuntimeState(.ready, detail: "Ready for live session context.")
-        } else {
-            settingsStore.updateVibeRuntimeState(.limited, detail: "Accessibility permission not granted. Using limited context.")
-        }
-    }
-
-    private func deriveWorkspaceRoots(
-        routingSignal: PromptRoutingSignal?,
-        snapshot: ContextSnapshot?
-    ) -> [String] {
-        var roots: [String] = []
-
-        if let workspacePath = routingSignal?.workspacePath,
-           !workspacePath.isEmpty {
-            roots.append(workspacePath)
-        } else if let documentPath = snapshot?.appContext?.documentPath,
-                  !documentPath.isEmpty {
-            let parent = (documentPath as NSString).deletingLastPathComponent
-            if !parent.isEmpty {
-                roots.append(parent)
-            }
-        }
-
-        return mergeUniqueContextSignals(roots)
-    }
-
-    private func mentionRewriteWorkspaceDebugSummary(
-        adapterName: String,
-        routingSignal: PromptRoutingSignal?,
-        snapshot: ContextSnapshot?,
-        derivedWorkspaceRoots: [String]
-    ) -> String {
-        let appContext = snapshot?.appContext
-        return """
-        adapter=\(adapterName) bundle=\(routingSignal?.appBundleIdentifier ?? "nil") app=\(appContext?.appName ?? "nil") signalWorkspacePresent=\(hasUsableContextValue(routingSignal?.workspacePath)) documentPathPresent=\(hasUsableContextValue(appContext?.documentPath)) windowTitlePresent=\(hasUsableContextValue(appContext?.windowTitle)) focusedValuePresent=\(hasUsableContextValue(appContext?.focusedElementValue)) terminalProvider=\(routingSignal?.terminalProviderIdentifier ?? "nil") isCodeEditorContext=\(routingSignal?.isCodeEditorContext ?? false) derivedWorkspaceRootCount=\(derivedWorkspaceRoots.count)
-        """
-    }
-
-    private func hasUsableContextValue(_ value: String?) -> Bool {
-        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines) else {
-            return false
-        }
-        return !value.isEmpty
-    }
-
-    private func mergeUniqueContextSignals(_ groups: [String]..., limit: Int = 8) -> [String] {
-        var seen = Set<String>()
-        var merged: [String] = []
-
-        for group in groups {
-            for value in group {
-                let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !normalized.isEmpty else { continue }
-                if seen.insert(normalized).inserted {
-                    merged.append(normalized)
-                }
-                if merged.count >= limit {
-                    return merged
-                }
-            }
-        }
-
-        return merged
-    }
-
-    private func buildSessionTransitionSignature(
-        snapshot: ContextSnapshot,
-        activeFilePath: String?,
-        workspacePath: String?
-    ) -> String {
-        let signature = snapshot.transitionSignature
-        return [
-            signature.bundleIdentifier,
-            signature.windowTitle,
-            signature.focusedElementRole,
-            signature.documentPath,
-            signature.selectedText,
-            activeFilePath,
-            workspacePath
-        ]
-        .map { $0?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
-        .joined(separator: "|")
-    }
-
-    private func shouldAppendTransition(
-        signature: String,
-        trigger: ContextSessionUpdateTrigger,
-        in session: ContextSessionState
-    ) -> Bool {
-        guard trigger != .recordingStart else { return true }
-        guard let lastSignature = session.transitions.last?.transitionSignature else { return true }
-        return lastSignature != signature
-    }
-
-    private func currentLiveSessionContext() -> LiveSessionContext? {
-        guard let contextSessionState else { return nil }
-
-        let enrichment = contextSessionState.latestAdapterEnrichment
-        let latestTransition = contextSessionState.transitions.last
-
-        let fileTagCandidates = mergeUniqueContextSignals(
-            enrichment?.fileTagCandidates ?? [],
-            contextSessionState.transitions.compactMap { $0.activeFilePath },
-            contextSessionState.transitions.flatMap { $0.contextTags }
-        )
-
-        return LiveSessionContext(
-            runtimeState: contextSessionState.runtimeState,
-            latestAppName: contextSessionState.latestSnapshot.appContext?.appName,
-            latestWindowTitle: contextSessionState.latestSnapshot.appContext?.windowTitle,
-            activeFilePath: latestTransition?.activeFilePath ?? enrichment?.activeFilePath ?? contextSessionState.latestSnapshot.appContext?.documentPath,
-            activeFileConfidence: latestTransition?.activeFileConfidence ?? enrichment?.activeFileConfidence ?? 0,
-            workspacePath: latestTransition?.workspacePath ?? contextSessionState.latestRoutingSignal.workspacePath ?? enrichment?.workspacePath,
-            workspaceConfidence: latestTransition?.workspaceConfidence ?? enrichment?.workspaceConfidence ?? 0,
-            fileTagCandidates: fileTagCandidates,
-            styleSignals: enrichment?.styleSignals ?? [],
-            codingSignals: enrichment?.codingSignals ?? [],
-            transitions: contextSessionState.transitions
-        ).bounded()
-    }
-
-    private func startLiveContextSessionIfNeeded(initialSnapshot: ContextSnapshot?) {
-        guard isRecording else { return }
-        guard shouldRunLiveContextSession() else {
-            stopLiveContextSession()
-            updateVibeRuntimeStateFromSettings()
-            return
-        }
-
-        installContextSessionObserversIfNeeded()
-
-        if contextSessionPollTimer == nil {
-            let timer = Timer.scheduledTimer(withTimeInterval: contextSessionPollInterval, repeats: true) { [weak self] _ in
-                Task { @MainActor in
-                    guard let self else { return }
-                    guard self.isRecording, self.shouldRunLiveContextSession() else { return }
-                    await self.updateContextSession(trigger: .poll)
-                }
-            }
-            timer.tolerance = 0.2
-            RunLoop.main.add(timer, forMode: .common)
-            contextSessionPollTimer = timer
-        }
-
-        if contextSessionState == nil {
-            Task { @MainActor in
-                await self.updateContextSession(trigger: .recordingStart, snapshotOverride: initialSnapshot)
-            }
-        }
-    }
-
-    private func stopLiveContextSession() {
-        contextSessionPollTimer?.invalidate()
-        contextSessionPollTimer = nil
-        removeContextSessionObserversIfNeeded()
-        contextSessionState = nil
-        lastFocusOrWindowUpdateAt = nil
-    }
-    private func suspendLiveContextSessionUpdates() {
-        contextSessionPollTimer?.invalidate()
-        contextSessionPollTimer = nil
-        removeContextSessionObserversIfNeeded()
-    }
-
-    private func installContextSessionObserversIfNeeded() {
-        guard contextSessionAppActivationObserver == nil else { return }
-
-        contextSessionAppActivationObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                guard let self else { return }
-                guard self.isRecording, self.shouldRunLiveContextSession() else { return }
-                await self.updateContextSession(trigger: .frontmostAppChange)
-            }
-        }
-    }
-
-    private func removeContextSessionObserversIfNeeded() {
-        if let contextSessionAppActivationObserver {
-            NSWorkspace.shared.notificationCenter.removeObserver(contextSessionAppActivationObserver)
-            self.contextSessionAppActivationObserver = nil
-        }
-    }
-
-    private func scheduleFocusOrWindowContextRefreshIfNeeded() {
-        guard isRecording, shouldRunLiveContextSession() else { return }
-
-        let now = Date()
-        if let lastFocusOrWindowUpdateAt,
-           now.timeIntervalSince(lastFocusOrWindowUpdateAt) < contextSessionFocusUpdateThrottle {
-            return
-        }
-
-        lastFocusOrWindowUpdateAt = now
-        Task { @MainActor in
-            await self.updateContextSession(trigger: .focusOrWindowChange)
-        }
-    }
-
-    private func updateContextSession(
-        trigger: ContextSessionUpdateTrigger,
-        snapshotOverride: ContextSnapshot? = nil
-    ) async {
-        guard isRecording else { return }
-        guard settingsStore.enableUIContext else { return }
-
-        let clipboardText = settingsStore.enableClipboardContext ? capturedContext?.clipboardText : nil
-        let snapshot = snapshotOverride ?? contextEngineService.captureSnapshot(clipboardText: clipboardText)
-        capturedSnapshot = snapshot
-
-        let routingSignal = PromptRoutingSignal.from(
-            snapshot: snapshot,
-            adapterRegistry: appContextAdapterRegistry
-        )
-        capturedRoutingSignal = routingSignal
-        _ = promptRoutingResolver.resolve(signal: routingSignal)
-
-        var adapterCapabilities: AppAdapterCapabilities?
-        var adapterEnrichment: AppRuntimeEnrichment?
-
-        if let bundleIdentifier = snapshot.appContext?.bundleIdentifier {
-            let adapter = appContextAdapterRegistry.adapter(for: bundleIdentifier)
-            adapterCapabilities = adapter.capabilities
-            adapterEnrichment = appContextAdapterRegistry.enrichment(for: snapshot, routingSignal: routingSignal)
-        }
-
-        capturedAdapterCapabilities = adapterCapabilities
-
-        let workspaceRoots = deriveWorkspaceRoots(routingSignal: routingSignal, snapshot: snapshot)
-        let workspaceInsights = await mentionRewriteService.deriveWorkspaceInsights(
-            workspaceRoots: workspaceRoots,
-            activeDocumentPath: snapshot.appContext?.documentPath
-        )
-
-        let activeFilePath = workspaceInsights.activeDocumentRelativePath
-            ?? adapterEnrichment?.activeFilePath
-            ?? snapshot.appContext?.documentPath
-
-        let activeFileConfidence = max(
-            workspaceInsights.activeDocumentConfidence,
-            adapterEnrichment?.activeFileConfidence ?? 0
-        )
-
-        let workspacePath = routingSignal.workspacePath
-            ?? workspaceInsights.normalizedWorkspaceRoots.first
-            ?? adapterEnrichment?.workspacePath
-
-        let workspaceConfidence = max(
-            workspaceInsights.workspaceConfidence,
-            adapterEnrichment?.workspaceConfidence ?? 0
-        )
-
-        let contextTags = mergeUniqueContextSignals(
-            workspaceInsights.fileTagCandidates,
-            adapterEnrichment?.fileTagCandidates ?? [],
-            adapterEnrichment?.styleSignals ?? [],
-            adapterEnrichment?.codingSignals ?? []
-        )
-
-        let transitionSignature = buildSessionTransitionSignature(
-            snapshot: snapshot,
-            activeFilePath: activeFilePath,
-            workspacePath: workspacePath
-        )
-
-        let runtimeState = contextEngineService.deriveRuntimeState(
-            for: snapshot,
-            adapterCapabilities: adapterCapabilities
-        )
-
-        let transition = ContextSessionTransition(
-            timestamp: snapshot.timestamp,
-            trigger: trigger,
-            snapshot: snapshot,
-            activeFilePath: activeFilePath,
-            activeFileConfidence: activeFileConfidence,
-            workspacePath: workspacePath,
-            workspaceConfidence: workspaceConfidence,
-            outputMode: settingsStore.outputMode,
-            contextTags: contextTags,
-            transitionSignature: transitionSignature
-        )
-
-        if var contextSessionState {
-            contextSessionState.latestSnapshot = snapshot
-            contextSessionState.latestRoutingSignal = routingSignal
-            contextSessionState.latestAdapterCapabilities = adapterCapabilities
-            contextSessionState.latestAdapterEnrichment = adapterEnrichment
-            contextSessionState.runtimeState = runtimeState
-
-            if shouldAppendTransition(
-                signature: transitionSignature,
-                trigger: trigger,
-                in: contextSessionState
-            ) {
-                contextSessionState.appendTransition(transition)
-            }
-
-            self.contextSessionState = contextSessionState
-        } else {
-            self.contextSessionState = ContextSessionState(
-                startedAt: recordingStartTime ?? Date(),
-                latestSnapshot: snapshot,
-                latestRoutingSignal: routingSignal,
-                latestAdapterCapabilities: adapterCapabilities,
-                latestAdapterEnrichment: adapterEnrichment,
-                runtimeState: runtimeState,
-                transitions: [transition]
-            )
-        }
-
-        let runtimeDetail = contextEngineService.deriveRuntimeDetail(
-            for: snapshot,
-            runtimeState: runtimeState
-        )
-        settingsStore.updateVibeRuntimeState(runtimeState, detail: runtimeDetail)
-    }
-
-    
-    // MARK: - Recording Flow
-    
-    private func handlePushToTalkStart() async {
-        guard !isRecording && !isProcessing else { return }
-        
-        do {
-            try await startRecording(source: .hotkeyPushToTalk)
-        } catch {
-            self.error = error
-            audioRecorder.resetAudioEngine()
-            Log.app.error("Failed to start recording: \(error)")
-            handleRecordingStartFailure(error, source: .hotkeyPushToTalk)
-        }
-    }
-    
-    private func handlePushToTalkEnd() async {
-        guard isRecording else { return }
-        
-        do {
-            try await stopRecordingAndTranscribe()
-        } catch {
-            self.error = error
-            audioRecorder.resetAudioEngine()
-            Log.app.error("Failed to stop recording: \(error)")
-        }
-    }
-
-    private func handleToggleRecording(source: RecordingTriggerSource) async {
-        if isRecording {
-            do {
-                try await stopRecordingAndTranscribe()
-            } catch {
-                self.error = error
-                audioRecorder.resetAudioEngine()
-                Log.app.error("Failed to stop recording: \(error)")
-            }
-        } else if !isProcessing {
-            do {
-                try await startRecording(source: source)
-            } catch {
-                self.error = error
-                audioRecorder.resetAudioEngine()
-                Log.app.error("Failed to start recording: \(error)")
-                handleRecordingStartFailure(error, source: source)
-            }
-        }
-    }
-    
-    private func startRecording(source: RecordingTriggerSource) async throws {
-        automaticDictionaryLearningService.cancelObservation()
-        logRecordingStartAttempt(source: source)
-
-        // If permissions were granted after launch, recreate global event taps
-        // so escape-to-cancel and modifier tracking become available mid-session.
-        ensureGlobalKeyMonitorsIfPossible()
-
-        await beginStreamingSessionIfAvailable()
-
-        let didStartRecording: Bool
-        do {
-            didStartRecording = try await audioRecorder.startRecording()
-        } catch {
-            if isStreamingTranscriptionSessionActive {
-                await cancelStreamingSession(preserveInsertedText: true)
-            }
-            Log.app.error("Audio engine failed to start: \(error)")
-            throw error
-        }
-
-        guard didStartRecording else {
-            if isStreamingTranscriptionSessionActive {
-                await cancelStreamingSession(preserveInsertedText: true)
-            }
-            Log.app.debug("Recording start already in progress; ignoring duplicate start request")
-            return
-        }
-
-        if settingsStore.pauseMediaOnRecording || settingsStore.muteAudioDuringRecording {
-            mediaPauseService.beginRecordingSession(
-                pauseMedia: settingsStore.pauseMediaOnRecording,
-                muteSystemAudio: settingsStore.muteAudioDuringRecording
-            )
-        }
-        
-        isRecording = true
-        recordingStartTime = Date()
-        capturedAdapterCapabilities = nil
-        capturedRoutingSignal = nil
-        contextSessionState = nil
-        lastFocusOrWindowUpdateAt = nil
-
-        if settingsStore.enableClipboardContext || settingsStore.enableUIContext {
-            let clipboardText = settingsStore.enableClipboardContext ? contextCaptureService.captureClipboardText() : nil
-            capturedContext = CapturedContext(clipboardText: clipboardText)
-
-            // Capture AX-based UI context when enabled (non-blocking)
-            var appContext: AppContextInfo? = nil
-            var captureWarnings: [ContextCaptureWarning] = []
-            if settingsStore.enableUIContext {
-                let result = contextEngineService.captureAppContext()
-                appContext = result.appContext
-                captureWarnings = result.warnings
-                if !captureWarnings.isEmpty {
-                    Log.app.debug("UI context capture warnings: \(captureWarnings.map(\.localizedDescription).joined(separator: ", "))")
-                }
-                if let ctx = appContext {
-                    Log.app.info("Captured UI context: hasAppName=\(!ctx.appName.isEmpty), hasWindowTitle=\(ctx.windowTitle != nil)")
-                }
-            }
-
-            capturedSnapshot = ContextSnapshot(
-                timestamp: Date(),
-                appContext: appContext,
-                clipboardText: clipboardText,
-                warnings: captureWarnings
-            )
-
-            if let snapshot = capturedSnapshot {
-                let routingSignal = PromptRoutingSignal.from(
-                    snapshot: snapshot,
-                    adapterRegistry: appContextAdapterRegistry
-                )
-                capturedRoutingSignal = routingSignal
-                _ = promptRoutingResolver.resolve(signal: routingSignal)
-
-                if let bundleIdentifier = snapshot.appContext?.bundleIdentifier {
-                    let adapter = appContextAdapterRegistry.adapter(for: bundleIdentifier)
-                    capturedAdapterCapabilities = adapter.capabilities
-                    let caps = adapter.capabilities
-                    Log.context.info("Adapter context: app=\(caps.displayName) prefix=\(caps.mentionPrefix) fileMentions=\(caps.supportsFileMentions) codeContext=\(caps.supportsCodeContext) docsMentions=\(caps.supportsDocsMentions) diffContext=\(caps.supportsDiffContext) webContext=\(caps.supportsWebContext) chatHistory=\(caps.supportsChatHistory)")
-                }
-            }
-        }
-
-        if shouldRunLiveContextSession() {
-            startLiveContextSessionIfNeeded(initialSnapshot: capturedSnapshot)
-        } else {
-            updateVibeRuntimeStateFromSettings()
-        }
-
-        statusBarController.setRecordingState()
-
-        startRecordingIndicatorSession()
-    }
-
-    private func logRecordingStartAttempt(source: RecordingTriggerSource) {
-        recordingStartAttemptCounter += 1
-        let snapshot = permissionManager.microphoneAuthorizationSnapshot()
-        let shortVersion = Bundle.main.appShortVersionString
-        let buildVersion = Bundle.main.appBuildVersionString
-        let bundleIdentifier = Bundle.main.bundleIdentifier ?? "unknown"
-        let bundlePath = Bundle.main.bundleURL.path
-        let executablePath = Bundle.main.executableURL?.path ?? "unknown"
-        let cachedDecision = snapshot.cachedDecision.map { $0 ? "granted" : "denied" } ?? "none"
-
-        Log.app.info(
-            "recording_start_attempt id=\(self.recordingStartAttemptCounter) source=\(source.rawValue) resolved=\(String(describing: snapshot.resolvedStatus)) avaudio=\(snapshot.audioApplicationStatus) avcapture=\(snapshot.captureDeviceStatus) requestedThisLaunch=\(snapshot.hasRequestedThisLaunch) cachedDecision=\(cachedDecision) bundleId=\(bundleIdentifier) shortVersion=\(shortVersion) buildVersion=\(buildVersion) pid=\(ProcessInfo.processInfo.processIdentifier) onboardingCompleted=\(self.settingsStore.hasCompletedOnboarding) bundlePath=\(bundlePath) executablePath=\(executablePath)"
-        )
-    }
-
-    private func normalizedTranscriptionText(_ text: String) -> String {
-        Self.normalizedTranscriptionText(text)
-    }
-
-    static func normalizedTranscriptionText(_ text: String) -> String {
-        text.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-    private func isTranscriptionEffectivelyEmpty(_ text: String) -> Bool {
-        Self.isTranscriptionEffectivelyEmpty(text)
-    }
-
-    static func isTranscriptionEffectivelyEmpty(_ text: String) -> Bool {
-        let normalizedText = normalizedTranscriptionText(text)
-        if normalizedText.isEmpty {
-            return true
-        }
-        return normalizedText.caseInsensitiveCompare("[BLANK AUDIO]") == .orderedSame
-    }
-
-    static func shouldPersistHistory(outputSucceeded: Bool, text: String) -> Bool {
-        outputSucceeded && !isTranscriptionEffectivelyEmpty(text)
-    }
-
-    static func shouldUseSpeakerDiarization(
-        diarizationFeatureEnabled: Bool,
-        isStreamingSessionActive: Bool
-    ) -> Bool {
-        diarizationFeatureEnabled && !isStreamingSessionActive
-    }
-
-    static func shouldUseStreamingTranscription(
-        streamingFeatureEnabled: Bool,
-        outputMode: OutputMode
-    ) -> Bool {
-        streamingFeatureEnabled &&
-            outputMode == .directInsert
-    }
-
-    private func encodeDiarizationSegmentsJSON(_ segments: [DiarizedTranscriptSegment]?) -> String? {
-        guard let segments, !segments.isEmpty else {
-            return nil
-        }
-
-        do {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.sortedKeys]
-            let encodedData = try encoder.encode(segments)
-            return String(data: encodedData, encoding: .utf8)
-        } catch {
-            Log.app.warning("Failed to encode diarization segments for history: \(error.localizedDescription)")
-            return nil
-        }
-    }
-
-    private func shouldUseStreamingTranscriptionForCurrentSession() -> Bool {
-        Self.shouldUseStreamingTranscription(
-            streamingFeatureEnabled: settingsStore.streamingFeatureEnabled,
-            outputMode: outputManager.outputMode
-        )
-    }
-
-    private func handleNoSpeechDetected(context: String) {
-        Log.app.info("No speech detected for \(context); skipping output")
-        toastService.show(
-            ToastPayload(
-                message: "No speech detected. Try speaking closer to your microphone."
-            )
-        )
-    }
-
-    private func handleRecordingStartFailure(_ error: Error, source: RecordingTriggerSource) {
-        let isHotkeySource: Bool
-        switch source {
-        case .hotkeyToggle, .hotkeyPushToTalk:
-            isHotkeySource = true
-        default:
-            isHotkeySource = false
-        }
-
-        guard isHotkeySource,
-              let audioError = error as? AudioRecorderError,
-              case .permissionDenied = audioError else {
-            return
-        }
-
-        AlertManager.shared.showMicrophonePermissionAlert()
-    }
-
-    private func beginStreamingSessionIfAvailable() async {
-        let shouldUseStreaming = shouldUseStreamingTranscriptionForCurrentSession()
-        guard shouldUseStreaming else {
-            let reasons = [
-                settingsStore.streamingFeatureEnabled ? nil : "feature-disabled",
-                outputManager.outputMode == .directInsert ? nil : "output-mode-not-directInsert"
-            ].compactMap { $0 }
-            Log.transcription.info("Streaming transcription disabled for session: \(reasons.joined(separator: ","))")
-            isStreamingTranscriptionSessionActive = false
-            clearStreamingSessionBindings(cancelPendingWork: true)
-            return
-        }
-
-        do {
-            setStreamingTranscriptionCallbacks()
-            try await transcriptionService.prepareStreamingEngine()
-            try await transcriptionService.startStreaming()
-            outputManager.beginStreamingInsertion()
-            attachStreamingAudioForwarding()
-            isStreamingTranscriptionSessionActive = true
-            Log.transcription.info("Streaming transcription enabled for current session")
-        } catch {
-            Log.transcription.error("Streaming transcription unavailable, falling back to batch: \(error)")
-            await cancelStreamingSession(preserveInsertedText: true)
-        }
-    }
-
-    private func setStreamingTranscriptionCallbacks() {
-        transcriptionService.setStreamingCallbacks(
-            onPartial: { [weak self] text in
-                Task { @MainActor in
-                    self?.enqueueStreamingInsertionUpdate(text, source: "partial")
-                }
-            },
-            onFinalUtterance: { [weak self] text in
-                Task { @MainActor in
-                    self?.enqueueStreamingInsertionUpdate(text, source: "final-utterance")
-                }
-            }
-        )
-    }
-
-    private func attachStreamingAudioForwarding() {
-        audioRecorder.onAudioBuffer = { [weak self] buffer in
-            self?.enqueueStreamingAudioBuffer(buffer)
-        }
-    }
-
-    private func enqueueStreamingAudioBuffer(_ buffer: AVAudioPCMBuffer) {
-        guard isStreamingTranscriptionSessionActive else { return }
-
-        let previousTask = streamingAudioProcessingTask
-        streamingAudioProcessingTask = Task { @MainActor [weak self] in
-            _ = await previousTask?.result
-            guard let self, self.isStreamingTranscriptionSessionActive else { return }
-            do {
-                try await self.transcriptionService.processStreamingAudioBuffer(buffer)
-            } catch {
-                Log.transcription.error("Streaming audio buffer processing failed: \(error)")
-            }
-        }
-    }
-
-    private func enqueueStreamingInsertionUpdate(_ text: String, source: String) {
-        guard isStreamingTranscriptionSessionActive else { return }
-
-        let previousTask = streamingInsertionUpdateTask
-        streamingInsertionUpdateTask = Task { @MainActor [weak self] in
-            _ = await previousTask?.result
-            guard let self, self.isStreamingTranscriptionSessionActive else { return }
-            do {
-                try await self.outputManager.updateStreamingInsertion(with: text)
-                Log.transcription.debug("Applied streaming \(source) update (chars=\(text.count))")
-            } catch {
-                Log.output.error("Failed applying streaming \(source) update: \(error)")
-            }
-        }
-    }
-
-    private func flushStreamingSessionWork() async {
-        if let task = streamingAudioProcessingTask {
-            _ = await task.result
-        }
-        streamingAudioProcessingTask = nil
-
-        if let task = streamingInsertionUpdateTask {
-            _ = await task.result
-        }
-        streamingInsertionUpdateTask = nil
-    }
-
-    private func clearStreamingSessionBindings(cancelPendingWork: Bool) {
-        audioRecorder.onAudioBuffer = nil
-        transcriptionService.setStreamingCallbacks(onPartial: nil, onFinalUtterance: nil)
-        if cancelPendingWork {
-            streamingAudioProcessingTask?.cancel()
-            streamingInsertionUpdateTask?.cancel()
-            streamingAudioProcessingTask = nil
-            streamingInsertionUpdateTask = nil
-        }
-    }
-
-    private func cancelStreamingSession(preserveInsertedText: Bool) async {
-        clearStreamingSessionBindings(cancelPendingWork: true)
-        await transcriptionService.cancelStreaming()
-        await outputManager.cancelStreamingInsertion(removeInsertedText: !preserveInsertedText)
-        isStreamingTranscriptionSessionActive = false
-    }
-
-    private func stopRecordingAndFinalizeStreaming() async throws {
-        guard let startTime = recordingStartTime else {
-            Log.app.warning("stopRecordingAndFinalizeStreaming called but recordingStartTime is nil")
-            return
-        }
-
-        isRecording = false
-        mediaPauseService.endRecordingSession()
-        suspendLiveContextSessionUpdates()
-        isProcessing = true
-
-        statusBarController.setProcessingState()
-
-        transitionRecordingIndicatorToProcessing()
-
-        defer {
-            resetProcessingState()
-        }
-
-        do {
-            _ = try await audioRecorder.stopRecording()
-        } catch {
-            Log.app.error("Failed to stop recording for streaming session: \(error)")
-            await cancelStreamingSession(preserveInsertedText: true)
-            throw error
-        }
-
-        await flushStreamingSessionWork()
-        transcriptionService.setStreamingCallbacks(onPartial: nil, onFinalUtterance: nil)
-
-        let finalStreamedText: String
-        do {
-            finalStreamedText = try await transcriptionService.stopStreaming()
-            Log.transcription.info("Streaming transcription finalized")
-        } catch {
-            Log.transcription.error("Failed to stop streaming transcription: \(error)")
-            await cancelStreamingSession(preserveInsertedText: true)
-            throw error
-        }
-
-        clearStreamingSessionBindings(cancelPendingWork: false)
-        isStreamingTranscriptionSessionActive = false
-
-        var (textAfterReplacements, appliedReplacements) = try dictionaryStore.applyReplacements(to: finalStreamedText)
-        textAfterReplacements = normalizedTranscriptionText(textAfterReplacements)
-        self.lastAppliedReplacements = appliedReplacements
-        if !appliedReplacements.isEmpty {
-            Log.app.info("Applied \(appliedReplacements.count) dictionary replacements")
-        }
-
-        guard !isTranscriptionEffectivelyEmpty(textAfterReplacements) else {
-            handleNoSpeechDetected(context: "streaming recording")
-            try? await outputManager.finishStreamingInsertion(finalText: "", appendTrailingSpace: false)
-            return
-        }
-
-        var outputSucceeded = false
-        do {
-            try await outputManager.finishStreamingInsertion(
-                finalText: textAfterReplacements,
-                appendTrailingSpace: settingsStore.addTrailingSpace
-            )
-            outputSucceeded = true
-            Log.transcription.debug("Applied final streaming transcription output")
-        } catch {
-            Log.output.error("Final streaming insertion failed: \(error)")
-            await outputManager.cancelStreamingInsertion(removeInsertedText: false)
-        }
-
-        guard Self.shouldPersistHistory(outputSucceeded: outputSucceeded, text: textAfterReplacements) else {
-            return
-        }
-
-        let duration = Date().timeIntervalSince(startTime)
-        do {
-            try historyStore.save(
-                text: textAfterReplacements,
-                originalText: nil,
-                duration: duration,
-                modelUsed: settingsStore.selectedModel,
-                enhancedWith: nil,
-                diarizationSegmentsJSON: nil
-            )
-            updateRecentTranscriptsMenu()
-        } catch {
-            Log.app.error("Failed to save streamed transcription to history: \(error)")
-        }
-    }
-    
-    private func stopRecordingAndTranscribe() async throws {
-        guard let startTime = recordingStartTime else {
-            Log.app.warning("stopRecordingAndTranscribe called but recordingStartTime is nil")
-            return
-        }
-
-        if isStreamingTranscriptionSessionActive {
-            try await stopRecordingAndFinalizeStreaming()
-            return
-        }
-
-        isRecording = false
-        mediaPauseService.endRecordingSession()
-        suspendLiveContextSessionUpdates()
-        isProcessing = true
-        var didResetProcessingState = false
-
-        statusBarController.setProcessingState()
-        
-        transitionRecordingIndicatorToProcessing()
-        
-        defer {
-            if !didResetProcessingState {
-                resetProcessingState()
-            }
-        }
-
-        let audioData: Data
-        do {
-            audioData = try await audioRecorder.stopRecording()
-        } catch {
-            Log.app.error("Failed to stop recording: \(error)")
-            throw error
-        }
-        
-        let duration = Date().timeIntervalSince(startTime)
-        do {
-            try await processRecordedAudioData(audioData, duration: duration)
-        } catch let error as TranscriptionService.TranscriptionError {
-            Log.app.error("Transcription failed: \(error)")
-            resetProcessingState()
-            didResetProcessingState = true
-            let message: String
-            switch error {
-            case .modelNotLoaded:
-                message = "No model loaded. Please download a model in Settings."
-            case .engineRuntimeFailure:
-                message = remoteEngineBlockedMessage(for: settingsStore.engineRuntimeState)
-            default:
-                message = "Transcription failed: \(error.localizedDescription)"
-            }
-            toastService.show(
-                ToastPayload(message: message, style: .error)
-            )
-            throw error
-        } catch {
-            Log.app.error("Transcription failed: \(error)")
-            resetProcessingState()
-            didResetProcessingState = true
-            toastService.show(
-                ToastPayload(message: "Transcription failed: \(error.localizedDescription)", style: .error)
-            )
-            throw error
-        }
-    }
-
-    func processRecordedAudioData(_ audioData: Data, duration: TimeInterval) async throws {
-        guard !audioData.isEmpty else {
-            Log.app.warning("No audio data recorded")
-            handleNoSpeechDetected(context: "recording")
-            return
-        }
-
-        if settingsStore.sttMode == .remote, !settingsStore.engineRuntimeState.isReady {
-            toastService.show(
-                ToastPayload(
-                    message: remoteEngineBlockedMessage(for: settingsStore.engineRuntimeState),
-                    style: .error
-                )
-            )
-            return
-        }
-        
-        let diarizationEnabled = Self.shouldUseSpeakerDiarization(
-            diarizationFeatureEnabled: settingsStore.diarizationFeatureEnabled,
-            isStreamingSessionActive: false
-        )
-        Log.app.info("Speaker diarization \(diarizationEnabled ? "enabled" : "disabled") for batch transcription")
-
-        let transcriptionOutput: TranscriptionOutput
-        do {
-            transcriptionOutput = try await transcriptionService.transcribe(
-                audioData: audioData,
-                diarizationEnabled: diarizationEnabled,
-                options: TranscriptionOptions(language: settingsStore.selectedAppLanguage)
-            )
-        } catch let error as TranscriptionService.TranscriptionError {
-            handleTranscriptionRuntimeFailure(error)
-            throw error
-        } catch {
-            throw error
-        }
-
-        if diarizationEnabled {
-            let segmentCount = transcriptionOutput.diarizedSegments?.count ?? 0
-            if segmentCount > 0 {
-                Log.app.info("Batch diarization produced \(segmentCount) segments")
-            } else {
-                Log.app.info("Batch diarization produced no attributed segments")
-            }
-        }
-
-        let diarizationSegmentsJSON = encodeDiarizationSegmentsJSON(transcriptionOutput.diarizedSegments)
-        let transcribedText = transcriptionOutput.text
-
-        var (textAfterReplacements, appliedReplacements) = try dictionaryStore.applyReplacements(to: transcribedText)
-        textAfterReplacements = normalizedTranscriptionText(textAfterReplacements)
-
-        guard !isTranscriptionEffectivelyEmpty(textAfterReplacements) else {
-            handleNoSpeechDetected(context: "recording")
-            return
-        }
-        self.lastAppliedReplacements = appliedReplacements
-        
-        if !appliedReplacements.isEmpty {
-            Log.app.info("Applied \(appliedReplacements.count) dictionary replacements")
-        }
-        
-        // Mention rewrite: resolve spoken file mentions to app-specific syntax
-        // Runs whenever adapter supports file mentions AND workspace roots are derivable
-        // (not gated by isCodeEditorContext — enables Antigravity and other non-IDE adapters)
-        var textAfterMentions = textAfterReplacements
-        var mentionFormattingCapabilities = capturedAdapterCapabilities
-        let derivedWorkspaceRoots = deriveWorkspaceRoots(
-            routingSignal: capturedRoutingSignal,
-            snapshot: capturedSnapshot
-        )
-        let shouldUsePlaceholderMentions = settingsStore.aiEnhancementEnabled &&
-            settingsStore.apiEndpoint != nil &&
-            settingsStore.currentAIProviderHasRequiredAPIKey()
-        if let capabilities = capturedAdapterCapabilities,
-           capabilities.supportsFileMentions {
-            let resolvedMentionFormatting = settingsStore.resolveMentionFormatting(
-                editorBundleIdentifier: capturedRoutingSignal?.appBundleIdentifier,
-                terminalProviderIdentifier: capturedRoutingSignal?.terminalProviderIdentifier,
-                adapterDefaultTemplate: capabilities.mentionTemplate,
-                adapterDefaultPrefix: capabilities.mentionPrefix
-            )
-            let effectiveCapabilities = capabilities.withMentionFormatting(
-                prefix: resolvedMentionFormatting.mentionPrefix,
-                template: resolvedMentionFormatting.mentionTemplate
-            )
-            mentionFormattingCapabilities = effectiveCapabilities
-            if !derivedWorkspaceRoots.isEmpty {
-                let rewriteResult: MentionRewriteResult
-                if shouldUsePlaceholderMentions {
-                    rewriteResult = await mentionRewriteService.rewriteToCanonicalPlaceholders(
-                        text: textAfterReplacements,
-                        capabilities: effectiveCapabilities,
-                        workspaceRoots: derivedWorkspaceRoots,
-                        activeDocumentPath: capturedSnapshot?.appContext?.documentPath
-                    )
-                } else {
-                    rewriteResult = await mentionRewriteService.rewrite(
-                        text: textAfterReplacements,
-                        capabilities: effectiveCapabilities,
-                        workspaceRoots: derivedWorkspaceRoots,
-                        activeDocumentPath: capturedSnapshot?.appContext?.documentPath
-                    )
-                }
-                textAfterMentions = rewriteResult.text
-                if rewriteResult.didRewrite {
-                    Log.app.info("Mention rewrite: \(rewriteResult.rewrittenCount) mention(s) rewritten, \(rewriteResult.preservedCount) preserved")
-                }
-            } else {
-                let adapterName = capturedAdapterCapabilities?.displayName ?? "unknown"
-                let hasDocPath = capturedSnapshot?.appContext?.documentPath != nil
-                let debugSummary = mentionRewriteWorkspaceDebugSummary(
-                    adapterName: adapterName,
-                    routingSignal: capturedRoutingSignal,
-                    snapshot: capturedSnapshot,
-                    derivedWorkspaceRoots: derivedWorkspaceRoots
-                )
-                Log.app.warning("Adapter '\(adapterName)' supports file mentions but no workspace roots derived (documentPath available: \(hasDocPath)); skipping mention rewrite. \(debugSummary)")
-            }
-        }
-        
-        let polishOutcome = await polishTranscribedTextIfNeeded(
-            textAfterMentions,
-            appContext: capturedSnapshot?.appContext
-        )
-        var finalText = normalizedTranscriptionText(polishOutcome.finalText)
-        let originalText = polishOutcome.originalText
-        let enhancedWithModel = polishOutcome.enhancedWithModel
-
-        if polishOutcome.didAttemptPolish,
-           let capabilities = mentionFormattingCapabilities,
-           capabilities.supportsFileMentions,
-           !derivedWorkspaceRoots.isEmpty {
-            let renderedPlaceholders = mentionRewriteService.renderCanonicalPlaceholders(
-                in: finalText,
-                capabilities: capabilities
-            )
-            finalText = renderedPlaceholders.text
-
-            if renderedPlaceholders.didRewrite {
-                Log.app.info("Post-polish placeholder render: \(renderedPlaceholders.rewrittenCount) placeholder(s) rendered, \(renderedPlaceholders.preservedCount) preserved")
-            } else {
-                let postPolishRewriteResult = await mentionRewriteService.rewrite(
-                    text: finalText,
-                    capabilities: capabilities,
-                    workspaceRoots: derivedWorkspaceRoots,
-                    activeDocumentPath: capturedSnapshot?.appContext?.documentPath
-                )
-                finalText = postPolishRewriteResult.text
-                if postPolishRewriteResult.didRewrite {
-                    Log.app.info("Post-polish mention rewrite: \(postPolishRewriteResult.rewrittenCount) mention(s) rewritten, \(postPolishRewriteResult.preservedCount) preserved")
-                }
-            }
-        }
-
-        finalText = normalizedTranscriptionText(finalText)
-        guard !isTranscriptionEffectivelyEmpty(finalText) else {
-            handleNoSpeechDetected(context: "recording")
-            return
-        }
-
-        let directInsertSnapshot = outputManager.outputMode == .directInsert
-            && settingsStore.automaticDictionaryLearningEnabled
-            ? contextEngineService.captureFocusedTextSnapshot()
-            : nil
-        var outputSucceeded = false
-        do {
-            if outputManager.outputMode == .directInsert {
-                ensureAccessibilityPermissionForDirectInsert(trigger: "output", showFallbackAlert: true)
-            }
-            let outputText = settingsStore.addTrailingSpace ? finalText + " " : finalText
-            try await outputManager.output(outputText)
-            outputSucceeded = true
-            if outputManager.outputMode == .directInsert,
-               settingsStore.automaticDictionaryLearningEnabled {
-                automaticDictionaryLearningService.beginObservation(
-                    preInsertSnapshot: directInsertSnapshot,
-                    insertedText: outputText
-                )
-            } else if outputManager.outputMode == .directInsert {
-                Log.app.info("Automatic dictionary learning disabled in settings; skipping observation")
-            }
-        } catch {
-            Log.app.error("Output failed: \(error)")
-        }
-
-        guard Self.shouldPersistHistory(outputSucceeded: outputSucceeded, text: finalText) else { return }
-
-        do {
-            try historyStore.save(
-                text: finalText,
-                originalText: originalText,
-                duration: duration,
-                modelUsed: settingsStore.selectedModel,
-                enhancedWith: enhancedWithModel,
-                diarizationSegmentsJSON: diarizationSegmentsJSON
-            )
-            updateRecentTranscriptsMenu()
-        } catch {
-            Log.app.error("Failed to save to history: \(error)")
-        }
-    }
-    
-    // MARK: - Escape Key Cancellation
-    
-    private func setupEscapeKeyMonitor() {
-        if escapeEventTap != nil, escapeRunLoopSource != nil {
-            installEscapeGlobalMonitorFallbackIfNeeded()
-            return
-        }
-
-        if escapeEventTap != nil, escapeRunLoopSource == nil {
-            Log.app.warning("Escape event tap missing run loop source; recreating monitor")
-            teardownEscapeKeyMonitor()
-        }
-
-        let eventMask = (1 << CGEventType.keyDown.rawValue)
-        
-        let refcon = Unmanaged.passUnretained(self).toOpaque()
-        
-        guard let eventTap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: CGEventMask(eventMask),
-            callback: { (proxy, type, event, refcon) -> Unmanaged<CGEvent>? in
-                guard let refcon = refcon else { return Unmanaged.passUnretained(event) }
-                
-                let coordinator = Unmanaged<AppCoordinator>.fromOpaque(refcon).takeUnretainedValue()
-                return coordinator.handleKeyEvent(proxy: proxy, type: type, event: event)
-            },
-            userInfo: refcon
-        ) else {
-            Log.app.error("Failed to create CGEventTap - Accessibility or Input Monitoring permission may be required")
-            resetEventTapRecoveryState(for: .escape)
-            installEscapeGlobalMonitorFallbackIfNeeded()
-            return
-        }
-
-        installEscapeGlobalMonitorFallbackIfNeeded()
-        
-        escapeEventTap = eventTap
-
-        guard let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0) else {
-            Log.app.error("Failed to create run loop source for escape CGEventTap")
-            escapeEventTap = nil
-            resetEventTapRecoveryState(for: .escape)
-            return
-        }
-
-        escapeRunLoopSource = source
-        eventTapRunLoopThread.performAndWait { runLoop in
-            CFRunLoopAddSource(runLoop, source, .commonModes)
-            CGEvent.tapEnable(tap: eventTap, enable: true)
-        }
-        resetEventTapRecoveryState(for: .escape)
-        Log.app.info("Escape key monitor installed")
-    }
-
-    private func setupModifierKeyMonitor() {
-        if modifierEventTap != nil, modifierRunLoopSource != nil {
-            removeModifierGlobalMonitorFallbackIfNeeded()
-            return
-        }
-
-        if modifierEventTap != nil, modifierRunLoopSource == nil {
-            Log.hotkey.warning("Modifier event tap missing run loop source; recreating monitor")
-            teardownModifierKeyMonitor()
-        }
-
-        let eventMask = (1 << CGEventType.flagsChanged.rawValue)
-
-        let refcon = Unmanaged.passUnretained(self).toOpaque()
-
-        guard let eventTap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: CGEventMask(eventMask),
-            callback: { (proxy, type, event, refcon) -> Unmanaged<CGEvent>? in
-                guard let refcon = refcon else { return Unmanaged.passUnretained(event) }
-
-                let coordinator = Unmanaged<AppCoordinator>.fromOpaque(refcon).takeUnretainedValue()
-                return coordinator.handleModifierKeyEvent(proxy: proxy, type: type, event: event)
-            },
-            userInfo: refcon
-        ) else {
-            Log.hotkey.error("Failed to create modifier CGEventTap - Accessibility or Input Monitoring permission may be required")
-            resetEventTapRecoveryState(for: .modifier)
-            installModifierGlobalMonitorFallbackIfNeeded()
-            return
-        }
-
-        removeModifierGlobalMonitorFallbackIfNeeded()
-
-        modifierEventTap = eventTap
-
-        guard let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0) else {
-            Log.hotkey.error("Failed to create run loop source for modifier CGEventTap")
-            modifierEventTap = nil
-            resetEventTapRecoveryState(for: .modifier)
-            return
-        }
-
-        modifierRunLoopSource = source
-        eventTapRunLoopThread.performAndWait { runLoop in
-            CFRunLoopAddSource(runLoop, source, .commonModes)
-            CGEvent.tapEnable(tap: eventTap, enable: true)
-        }
-        resetEventTapRecoveryState(for: .modifier)
-        Log.hotkey.info("Modifier key monitor installed")
-    }
-
-    private func teardownEscapeKeyMonitor() {
-        escapeEventTapRecoveryTask?.cancel()
-        escapeEventTapRecoveryTask = nil
-
-        if let source = escapeRunLoopSource {
-            let eventTap = escapeEventTap
-            eventTapRunLoopThread.performAndWait { runLoop in
-                if let eventTap {
-                    CGEvent.tapEnable(tap: eventTap, enable: false)
-                }
-                CFRunLoopRemoveSource(runLoop, source, .commonModes)
-            }
-        } else if let eventTap = escapeEventTap {
-            eventTapRunLoopThread.performAndWait { _ in
-                CGEvent.tapEnable(tap: eventTap, enable: false)
-            }
-        }
-
-        escapeEventTap = nil
-        escapeRunLoopSource = nil
-        resetEventTapRecoveryState(for: .escape)
-    }
-
-    private func teardownModifierKeyMonitor() {
-        modifierEventTapRecoveryTask?.cancel()
-        modifierEventTapRecoveryTask = nil
-
-        if let source = modifierRunLoopSource {
-            let eventTap = modifierEventTap
-            eventTapRunLoopThread.performAndWait { runLoop in
-                if let eventTap {
-                    CGEvent.tapEnable(tap: eventTap, enable: false)
-                }
-                CFRunLoopRemoveSource(runLoop, source, .commonModes)
-            }
-        } else if let eventTap = modifierEventTap {
-            eventTapRunLoopThread.performAndWait { _ in
-                CGEvent.tapEnable(tap: eventTap, enable: false)
-            }
-        }
-
-        modifierEventTap = nil
-        modifierRunLoopSource = nil
-        resetEventTapRecoveryState(for: .modifier)
-    }
-
-    private func scheduleEventTapRecovery(for kind: EventTapKind, disabledType: CGEventType) {
-        let now = Date()
-
-        switch kind {
-        case .escape:
-            let decision = Self.determineEventTapRecovery(
-                now: now,
-                lastDisableAt: escapeEventTapDisableState.lastDisableAt,
-                consecutiveDisableCount: escapeEventTapDisableState.consecutiveDisableCount,
-                disableLoopWindow: eventTapDisableLoopWindow,
-                maxReenableAttemptsBeforeRecreate: maxEventTapReenableAttemptsBeforeRecreate
-            )
-            escapeEventTapDisableState.lastDisableAt = now
-            escapeEventTapDisableState.consecutiveDisableCount = decision.consecutiveDisableCount
-            escapeEventTapDisableState.lastDisabledTypeRawValue = disabledType.rawValue
-
-            guard escapeEventTapRecoveryTask == nil else { return }
-            let recoveryDelay = eventTapRecoveryDelay
-            escapeEventTapRecoveryTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(for: recoveryDelay)
-                guard let self, !Task.isCancelled else { return }
-                self.escapeEventTapRecoveryTask = nil
-                self.performEventTapRecovery(for: .escape)
-            }
-        case .modifier:
-            let decision = Self.determineEventTapRecovery(
-                now: now,
-                lastDisableAt: modifierEventTapDisableState.lastDisableAt,
-                consecutiveDisableCount: modifierEventTapDisableState.consecutiveDisableCount,
-                disableLoopWindow: eventTapDisableLoopWindow,
-                maxReenableAttemptsBeforeRecreate: maxEventTapReenableAttemptsBeforeRecreate
-            )
-            modifierEventTapDisableState.lastDisableAt = now
-            modifierEventTapDisableState.consecutiveDisableCount = decision.consecutiveDisableCount
-            modifierEventTapDisableState.lastDisabledTypeRawValue = disabledType.rawValue
-
-            guard modifierEventTapRecoveryTask == nil else { return }
-            let recoveryDelay = eventTapRecoveryDelay
-            modifierEventTapRecoveryTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(for: recoveryDelay)
-                guard let self, !Task.isCancelled else { return }
-                self.modifierEventTapRecoveryTask = nil
-                self.performEventTapRecovery(for: .modifier)
-            }
-        }
-    }
-
-    private func performEventTapRecovery(for kind: EventTapKind) {
-        switch kind {
-        case .escape:
-            let state = escapeEventTapDisableState
-            resetEventTapRecoveryState(for: .escape)
-
-            guard state.consecutiveDisableCount > 0 else { return }
-
-            if state.consecutiveDisableCount >= maxEventTapReenableAttemptsBeforeRecreate {
-                Log.app.error(
-                    "Escape key monitor kept disabling (count=\(state.consecutiveDisableCount), lastType=\(state.lastDisabledTypeRawValue ?? 0)); recreating monitor"
-                )
-                teardownEscapeKeyMonitor()
-                setupEscapeKeyMonitor()
-                return
-            }
-
-            guard let tap = escapeEventTap else { return }
-
-            eventTapRunLoopThread.performAndWait { _ in
-                CGEvent.tapEnable(tap: tap, enable: true)
-            }
-            Log.app.warning("Escape key monitor was disabled (type=\(state.lastDisabledTypeRawValue ?? 0)); re-enabled after backoff")
-        case .modifier:
-            let state = modifierEventTapDisableState
-            resetEventTapRecoveryState(for: .modifier)
-
-            guard state.consecutiveDisableCount > 0 else { return }
-
-            if state.consecutiveDisableCount >= maxEventTapReenableAttemptsBeforeRecreate {
-                Log.hotkey.error(
-                    "Modifier key monitor kept disabling (count=\(state.consecutiveDisableCount), lastType=\(state.lastDisabledTypeRawValue ?? 0)); recreating monitor"
-                )
-                teardownModifierKeyMonitor()
-                setupModifierKeyMonitor()
-                return
-            }
-
-            guard let tap = modifierEventTap else { return }
-
-            eventTapRunLoopThread.performAndWait { _ in
-                CGEvent.tapEnable(tap: tap, enable: true)
-            }
-            Log.hotkey.warning("Modifier key monitor was disabled (type=\(state.lastDisabledTypeRawValue ?? 0)); re-enabled after backoff")
-        }
-    }
-
-    private func resetEventTapRecoveryState(for kind: EventTapKind) {
-        switch kind {
-        case .escape:
-            escapeEventTapDisableState = EventTapDisableState()
-        case .modifier:
-            modifierEventTapDisableState = EventTapDisableState()
-        }
-    }
-
-    private func installEscapeGlobalMonitorFallbackIfNeeded() {
-        guard escapeGlobalMonitor == nil else { return }
-
-        escapeGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
-            guard event.keyCode == 53 else { return }
-            Task { @MainActor in
-                self?.handleEscapeSignal(source: "nsevent-global")
-            }
-        }
-
-        if escapeGlobalMonitor != nil {
-            Log.app.warning("Using NSEvent global monitor fallback for escape key (observation only; suppression unavailable)")
-        }
-    }
-
-    private func removeEscapeGlobalMonitorFallbackIfNeeded() {
-        guard let monitor = escapeGlobalMonitor else { return }
-        NSEvent.removeMonitor(monitor)
-        escapeGlobalMonitor = nil
-        Log.app.debug("Removed NSEvent global monitor fallback for escape key")
-    }
-
-    private func installModifierGlobalMonitorFallbackIfNeeded() {
-        guard modifierGlobalMonitor == nil else { return }
-
-        modifierGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.flagsChanged]) { [weak self] event in
-            guard let cgEvent = event.cgEvent else { return }
-            Task { @MainActor in
-                self?.hotkeyManager.handleModifierFlagsChanged(event: cgEvent)
-            }
-        }
-
-        if modifierGlobalMonitor != nil {
-            Log.hotkey.warning("Using NSEvent global monitor fallback for modifier changes")
-        }
-    }
-
-    private func removeModifierGlobalMonitorFallbackIfNeeded() {
-        guard let monitor = modifierGlobalMonitor else { return }
-        NSEvent.removeMonitor(monitor)
-        modifierGlobalMonitor = nil
-        Log.hotkey.debug("Removed NSEvent global monitor fallback for modifier changes")
-    }
-    
-    static func shouldSuppressEscapeEvent(isRecording: Bool, isProcessing: Bool) -> Bool {
-        isRecording || isProcessing
-    }
-
-    static func isDoubleEscapePress(
-        now: Date,
-        lastEscapeTime: Date?,
-        threshold: TimeInterval
-    ) -> Bool {
-        guard let lastEscapeTime else { return false }
-        return now.timeIntervalSince(lastEscapeTime) <= threshold
-    }
-
-    private nonisolated func handleKeyEvent(
-        proxy: CGEventTapProxy,
-        type: CGEventType,
-        event: CGEvent
-    ) -> Unmanaged<CGEvent>? {
-        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            Task { @MainActor in
-                self.scheduleEventTapRecovery(for: .escape, disabledType: type)
-            }
-            return Unmanaged.passUnretained(event)
-        }
-
-        guard type == .keyDown else { return Unmanaged.passUnretained(event) }
-
-        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-        guard keyCode == 53 else {
-            Task { @MainActor in
-                self.scheduleFocusOrWindowContextRefreshIfNeeded()
-            }
-            return Unmanaged.passUnretained(event)
-        }
-        
-        let shouldSuppress: Bool
-        if Thread.isMainThread {
-            shouldSuppress = MainActor.assumeIsolated {
-                let suppress = Self.shouldSuppressEscapeEvent(
-                    isRecording: self.isRecording,
-                    isProcessing: self.isProcessing
-                )
-                self.handleEscapeSignal(source: "cg-event-tap")
-
-                if suppress {
-                    Log.app.info("Escape intercepted+suppressing (recordingOrProcessing=true)")
-                } else {
-                    Log.app.debug("Escape observed+forwarding (recordingOrProcessing=false)")
-                }
-
-                return suppress
-            }
-        } else {
-            shouldSuppress = DispatchQueue.main.sync {
-                MainActor.assumeIsolated {
-                    let suppress = Self.shouldSuppressEscapeEvent(
-                        isRecording: self.isRecording,
-                        isProcessing: self.isProcessing
-                    )
-                    self.handleEscapeSignal(source: "cg-event-tap")
-
-                    if suppress {
-                        Log.app.info("Escape intercepted+suppressing (recordingOrProcessing=true)")
-                    } else {
-                        Log.app.debug("Escape observed+forwarding (recordingOrProcessing=false)")
-                    }
-
-                    return suppress
-                }
-            }
-        }
-
-        return shouldSuppress ? nil : Unmanaged.passUnretained(event)
-    }
-
-    private func handleEscapeSignal(source: String) {
-        let now = Date()
-        if let lastSignal = lastEscapeSignalTime,
-           now.timeIntervalSince(lastSignal) <= duplicateEscapeSignalThreshold {
-            Log.app.debug("Ignoring duplicate escape signal from \(source)")
-            return
-        }
-
-        lastEscapeSignalTime = now
-        Log.app.info("Escape signal received (source=\(source))")
-        handleEscapeKeyPress()
-    }
-
-    private nonisolated func handleModifierKeyEvent(
-        proxy: CGEventTapProxy,
-        type: CGEventType,
-        event: CGEvent
-    ) -> Unmanaged<CGEvent>? {
-        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            Task { @MainActor in
-                self.scheduleEventTapRecovery(for: .modifier, disabledType: type)
-            }
-            return Unmanaged.passUnretained(event)
-        }
-
-        guard type == .flagsChanged else { return Unmanaged.passUnretained(event) }
-
-        Task { @MainActor in
-            hotkeyManager.handleModifierFlagsChanged(event: event)
-        }
-        return Unmanaged.passUnretained(event)
-    }
-    
-    private func handleEscapeKeyPress() {
-        guard isRecording || isProcessing else { return }
-        
-        let now = Date()
-        
-        if Self.isDoubleEscapePress(
-            now: now,
-            lastEscapeTime: lastEscapeTime,
-            threshold: doubleEscapeThreshold
-        ) {
-            lastEscapeTime = nil
-            floatingIndicatorState.clearEscapePrimed()
-            cancelCurrentOperation()
-        } else {
-            lastEscapeTime = now
-            if settingsStore.floatingIndicatorEnabled {
-                floatingIndicatorState.showEscapePrimed()
-            }
-        }
-    }
-    
-    private func cancelCurrentOperation() {
-        guard isRecording || isProcessing else {
-            Log.app.debug("Double-escape pressed but no operation in progress")
-            return
-        }
-        
-        Log.app.info("Cancelling current operation via double-escape")
-        let hadStreamingSession = isStreamingTranscriptionSessionActive
-        clearStreamingSessionBindings(cancelPendingWork: true)
-        isStreamingTranscriptionSessionActive = false
-        mediaTranscriptionTask?.cancel()
-        mediaTranscriptionTask = nil
-        mediaTranscriptionState.showLibrary()
-        mediaTranscriptionState.libraryMessage = "Transcription canceled."
-        mediaTranscriptionState.clearCurrentJob()
-        if hadStreamingSession {
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                await self.transcriptionService.cancelStreaming()
-                await self.outputManager.cancelStreamingInsertion(removeInsertedText: false)
-            }
-        }
-
-        audioRecorder.resetAudioEngine()
-        mediaPauseService.endRecordingSession()
-        isRecording = false
-        isProcessing = false
-        recordingStartTime = nil
-        capturedContext = nil
-        capturedSnapshot = nil
-        capturedAdapterCapabilities = nil
-        capturedRoutingSignal = nil
-        stopLiveContextSession()
-        updateVibeRuntimeStateFromSettings()
-        error = nil
-
-        statusBarController.setIdleState()
-        statusBarController.updateMenuState()
-        
-        finishIndicatorSession()
-    }
-
-    private func resetProcessingState() {
-        mediaPauseService.endRecordingSession()
-        isProcessing = false
-        recordingStartTime = nil
-        capturedContext = nil
-        capturedSnapshot = nil
-        capturedAdapterCapabilities = nil
-        capturedRoutingSignal = nil
-        stopLiveContextSession()
-        updateVibeRuntimeStateFromSettings()
-        statusBarController.setIdleState()
-        statusBarController.updateMenuState()
-
-        finishIndicatorSession()
-    }
-
-    // MARK: - Floating Indicator Actions
-
-    private func handleHideFloatingIndicatorForOneHour() {
-        let hideDuration: TimeInterval = 60 * 60
-        floatingIndicatorHiddenUntil = Date().addingTimeInterval(hideDuration)
-
-        hideAllFloatingIndicators()
-
-        floatingIndicatorHiddenTask?.cancel()
-        floatingIndicatorHiddenTask = Task { [weak self] in
-            do {
-                try await Task.sleep(nanoseconds: UInt64(hideDuration * 1_000_000_000))
-            } catch {
-                return
-            }
-
-            await MainActor.run {
-                guard let self = self else { return }
-                self.floatingIndicatorHiddenUntil = nil
-                self.updateFloatingIndicatorVisibility()
-            }
-        }
-
-        Log.ui.info("Floating indicator hidden for one hour")
-    }
-
-    private func handleReportIssue() {
-        guard let supportURL = URL(string: "https://github.com/watzon/pindrop/issues") else { return }
-        NSWorkspace.shared.open(supportURL)
-    }
-
-    private func handleSelectInputDeviceUID(_ uid: String) {
-        settingsStore.selectedInputDeviceUID = uid
-        audioRecorder.setPreferredInputDeviceUID(uid)
-
-        if uid.isEmpty {
-            Log.audio.info("Selected input device: system default")
-        } else {
-            Log.audio.info("Selected input device UID: \(uid)")
-        }
-    }
-
-    private func handleSelectLanguage(_ language: AppLanguage) {
-        settingsStore.selectedAppLanguage = language
-        Log.ui.info("Selected app language: \(language.rawValue)")
-    }
-
-    // MARK: - Copy Last Transcript
-
-    private func handleCopyLastTranscript() async {
-        do {
-            let records = try historyStore.fetch(limit: 1)
-            guard let lastRecord = records.first else {
-                Log.app.warning("No transcripts to copy")
-                return
-            }
-
-            await MainActor.run {
-                let pasteboard = NSPasteboard.general
-                pasteboard.clearContents()
-                pasteboard.writeObjects([lastRecord.text as NSString])
-            }
-            Log.app.info("Copied last transcript to clipboard")
-        } catch {
-            Log.app.error("Failed to copy last transcript: \(error)")
-        }
-    }
+    // Recording entry points and lifecycle are in RecordingCoordinator
 
     private func handlePasteLastTranscript() async {
         do {
@@ -3513,7 +1038,7 @@ final class AppCoordinator {
     }
 
     private func performMediaTranscription(_ request: MediaTranscriptionRequest) async {
-        guard !isRecording && !isProcessing else {
+        guard !recordingCoordinator.isRecording && !recordingCoordinator.isProcessing else {
             mediaTranscriptionState.libraryMessage = "Finish the active transcription before starting another one."
             return
         }
@@ -3535,16 +1060,16 @@ final class AppCoordinator {
         mediaTranscriptionState.beginJob(job)
         mainWindowController.showTranscribe()
 
-        isProcessing = true
+        recordingCoordinator.isProcessing = true
         statusBarController.setProcessingState()
         statusBarController.updateMenuState()
-        startProcessingIndicatorSession()
+        floatingIndicatorCoordinator.startProcessingIndicatorSession()
 
         var didResetProcessingState = false
 
         defer {
             if !didResetProcessingState {
-                resetProcessingState()
+                recordingCoordinator.resetProcessingState()
             }
         }
 
@@ -3586,9 +1111,9 @@ final class AppCoordinator {
             let transcriptionOutput = try await transcriptionService.transcribe(
                 audioData: preparedAudio.audioData,
                 diarizationEnabled: true,
-                options: TranscriptionOptions(language: settingsStore.selectedAppLanguage)
+                options: TranscriptionOptions(language: .automatic)
             )
-            let diarizationSegmentsJSON = encodeDiarizationSegmentsJSON(transcriptionOutput.diarizedSegments)
+            let diarizationSegmentsJSON = recordingCoordinator.encodeDiarizationSegmentsJSON(transcriptionOutput.diarizedSegments)
 
             try Task.checkCancellation()
 
@@ -3599,8 +1124,8 @@ final class AppCoordinator {
                 errorMessage: nil
             )
 
-            let finalText = normalizedTranscriptionText(transcriptionOutput.text)
-            guard !isTranscriptionEffectivelyEmpty(finalText) else {
+            let finalText = RecordingCoordinator.normalizedTranscriptionText(transcriptionOutput.text)
+            guard !RecordingCoordinator.isTranscriptionEffectivelyEmpty(finalText) else {
                 throw MediaPreparationError.readFailed("No speech could be transcribed from this media.")
             }
 
@@ -3621,18 +1146,18 @@ final class AppCoordinator {
             updateRecentTranscriptsMenu()
 
             let shouldNavigateToDetail = mediaTranscriptionState.route == .processing(job.id)
-            resetProcessingState()
+            recordingCoordinator.resetProcessingState()
             didResetProcessingState = true
             mediaTranscriptionState.completeCurrentJob(with: record.id, shouldNavigateToDetail: shouldNavigateToDetail)
         } catch is CancellationError {
-            resetProcessingState()
+            recordingCoordinator.resetProcessingState()
             didResetProcessingState = true
             mediaTranscriptionState.showLibrary()
             mediaTranscriptionState.libraryMessage = "Transcription canceled."
             mediaTranscriptionState.clearCurrentJob()
         } catch let error as MediaIngestionError {
             Log.app.error("Media ingestion failed: \(error.localizedDescription)")
-            resetProcessingState()
+            recordingCoordinator.resetProcessingState()
             didResetProcessingState = true
             mediaTranscriptionState.clearCurrentJob()
             if case .toolingUnavailable(let message) = error {
@@ -3642,7 +1167,7 @@ final class AppCoordinator {
             }
         } catch {
             Log.app.error("Media transcription failed: \(error)")
-            resetProcessingState()
+            recordingCoordinator.resetProcessingState()
             didResetProcessingState = true
             let shouldReturnToLibrary = mediaTranscriptionState.route != .processing(job.id)
             mediaTranscriptionState.failCurrentJob(error.localizedDescription, returnToLibrary: shouldReturnToLibrary)
@@ -3652,33 +1177,33 @@ final class AppCoordinator {
     // MARK: - Clear Audio Buffer
 
     private func handleClearAudioBuffer() async {
-        guard isRecording else {
-            finishIndicatorSession()
+        guard recordingCoordinator.isRecording else {
+            floatingIndicatorCoordinator.finishIndicatorSession()
             return
         }
 
         Log.app.info("Clearing audio buffer")
         audioRecorder.cancelRecording()
-        if isStreamingTranscriptionSessionActive {
-            await cancelStreamingSession(preserveInsertedText: true)
+        if recordingCoordinator.isStreamingTranscriptionSessionActive {
+            await recordingCoordinator.cancelStreamingSession(preserveInsertedText: true)
         } else {
-            clearStreamingSessionBindings(cancelPendingWork: true)
+            recordingCoordinator.clearStreamingSessionBindings(cancelPendingWork: true)
         }
         mediaPauseService.endRecordingSession()
-        isRecording = false
-        recordingStartTime = nil
-        stopLiveContextSession()
-        updateVibeRuntimeStateFromSettings()
+        recordingCoordinator.isRecording = false
+        recordingCoordinator.recordingStartTime = nil
+        contextSessionCoordinator.stopLiveContextSession()
+        contextSessionCoordinator.updateVibeRuntimeStateFromSettings()
 
         statusBarController.setIdleState()
 
-        finishIndicatorSession()
+        floatingIndicatorCoordinator.finishIndicatorSession()
     }
 
     // MARK: - Cancel Operation
 
     private func handleCancelOperation() async {
-        cancelCurrentOperation()
+        recordingCoordinator.cancelCurrentOperation()
     }
 
     // MARK: - Toggle Output Mode
@@ -3727,8 +1252,7 @@ final class AppCoordinator {
     private func ensureGlobalKeyMonitorsIfPossible() {
         guard permissionManager.checkAccessibilityPermission() else { return }
 
-        setupEscapeKeyMonitor()
-        setupModifierKeyMonitor()
+        eventTapManager.ensureGlobalKeyMonitorsIfPossible()
     }
 
     // MARK: - Toggle AI Enhancement
@@ -3739,12 +1263,12 @@ final class AppCoordinator {
         Log.app.info("AI enhancement \(status)")
 
         if !settingsStore.aiEnhancementEnabled {
-            stopLiveContextSession()
-        } else if isRecording, shouldRunLiveContextSession() {
-            startLiveContextSessionIfNeeded(initialSnapshot: capturedSnapshot)
+            contextSessionCoordinator.stopLiveContextSession()
+        } else if recordingCoordinator.isRecording, contextSessionCoordinator.shouldRunLiveContextSession() {
+            contextSessionCoordinator.startLiveContextSessionIfNeeded(initialSnapshot: contextSessionCoordinator.capturedSnapshot)
         }
 
-        updateVibeRuntimeStateFromSettings()
+        contextSessionCoordinator.updateVibeRuntimeStateFromSettings()
     }
 
     // MARK: - Select Prompt Preset
@@ -3771,7 +1295,7 @@ final class AppCoordinator {
         settingsStore.floatingIndicatorEnabled.toggle()
 
         if settingsStore.floatingIndicatorEnabled {
-            clearFloatingIndicatorTemporaryHiddenState()
+            floatingIndicatorCoordinator.clearFloatingIndicatorTemporaryHiddenState()
         }
 
         let status = settingsStore.floatingIndicatorEnabled ? "enabled" : "disabled"
@@ -3793,7 +1317,7 @@ final class AppCoordinator {
     }
 
     private func handleCheckForUpdates() {
-        if updateService.shouldDeferUpdate(isRecording: isRecording || isProcessing) {
+        if updateService.shouldDeferUpdate(isRecording: recordingCoordinator.isRecording || recordingCoordinator.isProcessing) {
             AlertManager.shared.showGenericErrorAlert(
                 title: "Update Deferred",
                 message: "Finish recording or processing before checking for updates."
@@ -3802,6 +1326,31 @@ final class AppCoordinator {
         }
 
         updateService.checkForUpdates()
+    }
+
+    // MARK: - Report Issue
+
+    private func handleReportIssue() {
+        guard let supportURL = URL(string: "https://github.com/watzon/pindrop/issues") else { return }
+        NSWorkspace.shared.open(supportURL)
+    }
+
+    // MARK: - Input Device / Language
+
+    private func handleSelectInputDeviceUID(_ uid: String) {
+        settingsStore.selectedInputDeviceUID = uid
+        audioRecorder.setPreferredInputDeviceUID(uid)
+
+        if uid.isEmpty {
+            Log.audio.info("Selected input device: system default")
+        } else {
+            Log.audio.info("Selected input device UID: \(uid)")
+        }
+    }
+
+    private func handleSelectLanguage(_ language: AppLanguage) {
+        settingsStore.selectedAppLanguage = language
+        Log.ui.info("Selected app language: \(language.rawValue)")
     }
 
     // MARK: - Open History
@@ -3822,7 +1371,7 @@ final class AppCoordinator {
             return
         }
         
-        guard !isRecording && !isProcessing else {
+        guard !recordingCoordinator.isRecording && !recordingCoordinator.isProcessing else {
             Log.app.warning("Cannot switch model while recording or processing")
             return
         }
@@ -3888,14 +1437,8 @@ final class AppCoordinator {
 
     func cleanup() {
         engineProcessManager.stop()
-        floatingIndicatorHiddenTask?.cancel()
-        floatingIndicatorHiddenTask = nil
-        engineRuntimeEvaluationTask?.cancel()
-        engineRuntimeEvaluationTask = nil
-        teardownEscapeKeyMonitor()
-        teardownModifierKeyMonitor()
-        removeEscapeGlobalMonitorFallbackIfNeeded()
-        removeModifierGlobalMonitorFallbackIfNeeded()
-        eventTapRunLoopThread.stopIfNeeded()
+        floatingIndicatorCoordinator.clearFloatingIndicatorTemporaryHiddenState()
+        engineRuntimeCoordinator.cancelPendingEvaluation()
+        eventTapManager.cleanup()
     }
 }

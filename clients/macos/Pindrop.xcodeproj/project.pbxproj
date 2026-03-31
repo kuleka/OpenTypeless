@@ -28,6 +28,13 @@
 		6B2BB9C7EBDC41319789EF2F /* HistoryStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0729D0116F8418084311F4C /* HistoryStoreTests.swift */; };
 		ENGCLIENTBUILD01A2B3C4D5E6F70 /* EngineClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = ENGCLIENTFILE01A2B3C4D5E6F71 /* EngineClient.swift */; };
 		ENGPROCMGRBLD001 /* EngineProcessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = ENGPROCMGRFILE001 /* EngineProcessManager.swift */; };
+		COORDTYPESBLD001 /* CoordinatorTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = COORDTYPESFILE001 /* CoordinatorTypes.swift */; };
+		EVTTAPMGRBLD001 /* EventTapManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EVTTAPMGRFILE001 /* EventTapManager.swift */; };
+		FLTINDCOORDBLD001 /* FloatingIndicatorCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = FLTINDCOORDFILE001 /* FloatingIndicatorCoordinator.swift */; };
+		ENGRTCOORDBLD001 /* EngineRuntimeCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = ENGRTCOORDFILE001 /* EngineRuntimeCoordinator.swift */; };
+		HOTKEYCOORDBLD001 /* HotkeyCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = HOTKEYCOORDFILE001 /* HotkeyCoordinator.swift */; };
+		CTXSESSCOORDBLD01 /* ContextSessionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = CTXSESSCOORDFILE1 /* ContextSessionCoordinator.swift */; };
+		RECCOORDBLD00001 /* RecordingCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = RECCOORDFILE0001 /* RecordingCoordinator.swift */; };
 		ENGPROCTSTBLD001 /* EngineProcessManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ENGPROCTSTFILE001 /* EngineProcessManagerTests.swift */; };
 		E2ETSTBLD001 /* EngineE2ETests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2ETSTFILE001 /* EngineE2ETests.swift */; };
 		STTMODEBLD001 /* STTModeStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = STTMODEFILE001 /* STTModeStepView.swift */; };
@@ -190,6 +197,13 @@
 		6f62938483ec4a11ad5636be /* TranscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionService.swift; sourceTree = "<group>"; };
 		6D20B8A9B1354A27AA77CCDD /* EngineTranscriptionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineTranscriptionEngine.swift; sourceTree = "<group>"; };
 				ENGPROCMGRFILE001 /* EngineProcessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineSupport/EngineProcessManager.swift; sourceTree = "<group>"; };
+			COORDTYPESFILE001 /* CoordinatorTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoordinatorTypes.swift; sourceTree = "<group>"; };
+			EVTTAPMGRFILE001 /* EventTapManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventTapManager.swift; sourceTree = "<group>"; };
+		FLTINDCOORDFILE001 /* FloatingIndicatorCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingIndicatorCoordinator.swift; sourceTree = "<group>"; };
+		ENGRTCOORDFILE001 /* EngineRuntimeCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineRuntimeCoordinator.swift; sourceTree = "<group>"; };
+		HOTKEYCOORDFILE001 /* HotkeyCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyCoordinator.swift; sourceTree = "<group>"; };
+		CTXSESSCOORDFILE1 /* ContextSessionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextSessionCoordinator.swift; sourceTree = "<group>"; };
+		RECCOORDFILE0001 /* RecordingCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingCoordinator.swift; sourceTree = "<group>"; };
 		ENGPROCTSTFILE001 /* EngineProcessManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineProcessManagerTests.swift; sourceTree = "<group>"; };
 		E2ETSTFILE001 /* EngineE2ETests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineE2ETests.swift; sourceTree = "<group>"; };
 		STTMODEFILE001 /* STTModeStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = STTModeStepView.swift; sourceTree = "<group>"; };
@@ -510,6 +524,7 @@
 				643083A84C484508864DA167 /* UI */,
 				UTILS001A2B3C4D5E6F72 /* Utils */,
 				MOCKSGRP1A2B3C4D5E6F72 /* Mocks */,
+				COORDGRP001A2B3C4D5E6F /* Coordinators */,
 				86FB8BA663AAD1BE56BE198A /* AppCoordinator.swift */,
 				A9B6FA1DDE42D518F7806484 /* AppTestMode.swift */,
 			);
@@ -609,6 +624,20 @@
 				PREVMOCKS1A2B3C4D5E6F71 /* PreviewMocks.swift */,
 			);
 			path = Mocks;
+			sourceTree = "<group>";
+		};
+		COORDGRP001A2B3C4D5E6F /* Coordinators */ = {
+			isa = PBXGroup;
+			children = (
+				COORDTYPESFILE001 /* CoordinatorTypes.swift */,
+				EVTTAPMGRFILE001 /* EventTapManager.swift */,
+				FLTINDCOORDFILE001 /* FloatingIndicatorCoordinator.swift */,
+				ENGRTCOORDFILE001 /* EngineRuntimeCoordinator.swift */,
+				HOTKEYCOORDFILE001 /* HotkeyCoordinator.swift */,
+				CTXSESSCOORDFILE1 /* ContextSessionCoordinator.swift */,
+				RECCOORDFILE0001 /* RecordingCoordinator.swift */,
+			);
+			path = Coordinators;
 			sourceTree = "<group>";
 		};
 		RESOURCESGRP1A2B3C4D5E6F /* Resources */ = {
@@ -889,6 +918,13 @@
 				A1B2C3D4E5F6789012345679 /* SettingsStore.swift in Sources */,
 				B2C3D4E5F6789012345678AB /* ModelManager.swift in Sources */,
 				4C6B0181BA512555942717CB /* AppCoordinator.swift in Sources */,
+				COORDTYPESBLD001 /* CoordinatorTypes.swift in Sources */,
+				EVTTAPMGRBLD001 /* EventTapManager.swift in Sources */,
+				FLTINDCOORDBLD001 /* FloatingIndicatorCoordinator.swift in Sources */,
+				ENGRTCOORDBLD001 /* EngineRuntimeCoordinator.swift in Sources */,
+				HOTKEYCOORDBLD001 /* HotkeyCoordinator.swift in Sources */,
+				CTXSESSCOORDBLD01 /* ContextSessionCoordinator.swift in Sources */,
+				RECCOORDBLD00001 /* RecordingCoordinator.swift in Sources */,
 				ENGCLIENTBUILD01A2B3C4D5E6F70 /* EngineClient.swift in Sources */,
 				URLSESSIONPROTOBUILD01A2B3C4D5E6F70 /* URLSessionProtocol.swift in Sources */,
 				POLISHSVCBUILD01A2B3C4D5E6F70 /* PolishService.swift in Sources */,

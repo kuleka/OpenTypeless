@@ -11,15 +11,16 @@ def setup_module() -> None:
 
 def test_assemble_email_scene() -> None:
     result = assemble_prompt(SceneType.EMAIL, "hi tom thanks for the report")
-    assert "hi tom thanks for the report" == result.user
-    assert "email" in result.system.lower() or "professional" in result.system.lower()
+    assert "hi tom thanks for the report" in result.user
+    assert "<transcript>" in result.user
+    assert "email" in result.system.lower()
     # System prompt rules should always be present
     assert "voice-to-text" in result.system.lower()
 
 
 def test_assemble_default_scene() -> None:
     result = assemble_prompt(SceneType.DEFAULT, "some text here")
-    assert "some text here" == result.user
+    assert "some text here" in result.user
     assert "voice-to-text" in result.system.lower()
 
 
@@ -27,7 +28,7 @@ def test_assemble_all_scenes_have_system_prompt() -> None:
     for scene in SceneType:
         result = assemble_prompt(scene, "test")
         assert "voice-to-text" in result.system.lower()
-        assert result.user == "test"
+        assert "test" in result.user
 
 
 def test_assemble_translate_task() -> None:
@@ -37,8 +38,8 @@ def test_assemble_translate_task() -> None:
         task=TaskType.TRANSLATE,
         output_language="en",
     )
-    assert "en" in result.system.lower() or "english" in result.system.lower()
-    assert result.user == "你好世界"
+    assert "english" in result.system.lower()
+    assert "你好世界" in result.user
 
 
 def test_assemble_translate_uses_output_language() -> None:
@@ -48,4 +49,14 @@ def test_assemble_translate_uses_output_language() -> None:
         task=TaskType.TRANSLATE,
         output_language="ja",
     )
-    assert "ja" in result.system.lower()
+    assert "japanese" in result.system.lower()
+
+
+def test_assemble_translate_unknown_code_passes_through() -> None:
+    result = assemble_prompt(
+        SceneType.DEFAULT,
+        "hello",
+        task=TaskType.TRANSLATE,
+        output_language="Swedish",
+    )
+    assert "swedish" in result.system.lower()

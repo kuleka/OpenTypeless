@@ -391,9 +391,10 @@ final class SettingsStore: ObservableObject {
          static let pushToTalkHotkeyCode = 44
          static let pushToTalkHotkeyModifiers = 0x100
 
-         static let copyLastTranscriptHotkey = "⇧⌘C"
-         static let copyLastTranscriptHotkeyCode = 8
-         static let copyLastTranscriptHotkeyModifiers = 0x300
+         static let translateHotkey = "⇧⌘T"
+         static let translateHotkeyCode = 17
+         static let translateHotkeyModifiers = 0x300
+         static let translateOutputLanguage = "en"
 
       }
    }
@@ -414,12 +415,14 @@ final class SettingsStore: ObservableObject {
    var pushToTalkHotkeyCode: Int = Defaults.Hotkeys.pushToTalkHotkeyCode
    @AppStorage("pushToTalkHotkeyModifiers", store: SettingsStoreRuntime.appStorageStore)
    var pushToTalkHotkeyModifiers: Int = Defaults.Hotkeys.pushToTalkHotkeyModifiers
-   @AppStorage("copyLastTranscriptHotkey", store: SettingsStoreRuntime.appStorageStore)
-   var copyLastTranscriptHotkey: String = Defaults.Hotkeys.copyLastTranscriptHotkey
-   @AppStorage("copyLastTranscriptHotkeyCode", store: SettingsStoreRuntime.appStorageStore)
-   var copyLastTranscriptHotkeyCode: Int = Defaults.Hotkeys.copyLastTranscriptHotkeyCode
-   @AppStorage("copyLastTranscriptHotkeyModifiers", store: SettingsStoreRuntime.appStorageStore)
-   var copyLastTranscriptHotkeyModifiers: Int = Defaults.Hotkeys.copyLastTranscriptHotkeyModifiers
+   @AppStorage("translateHotkey", store: SettingsStoreRuntime.appStorageStore)
+   var translateHotkey: String = Defaults.Hotkeys.translateHotkey
+   @AppStorage("translateHotkeyCode", store: SettingsStoreRuntime.appStorageStore)
+   var translateHotkeyCode: Int = Defaults.Hotkeys.translateHotkeyCode
+   @AppStorage("translateHotkeyModifiers", store: SettingsStoreRuntime.appStorageStore)
+   var translateHotkeyModifiers: Int = Defaults.Hotkeys.translateHotkeyModifiers
+   @AppStorage("translateOutputLanguage", store: SettingsStoreRuntime.appStorageStore)
+   var translateOutputLanguage: String = Defaults.Hotkeys.translateOutputLanguage
     @AppStorage("outputMode", store: SettingsStoreRuntime.appStorageStore) var outputMode: String =
        Defaults.outputMode
     @AppStorage("selectedLanguage", store: SettingsStoreRuntime.appStorageStore)
@@ -1090,9 +1093,10 @@ final class SettingsStore: ObservableObject {
       pushToTalkHotkey = Defaults.Hotkeys.pushToTalkHotkey
       pushToTalkHotkeyCode = Defaults.Hotkeys.pushToTalkHotkeyCode
       pushToTalkHotkeyModifiers = Defaults.Hotkeys.pushToTalkHotkeyModifiers
-      copyLastTranscriptHotkey = Defaults.Hotkeys.copyLastTranscriptHotkey
-      copyLastTranscriptHotkeyCode = Defaults.Hotkeys.copyLastTranscriptHotkeyCode
-      copyLastTranscriptHotkeyModifiers = Defaults.Hotkeys.copyLastTranscriptHotkeyModifiers
+      translateHotkey = Defaults.Hotkeys.translateHotkey
+      translateHotkeyCode = Defaults.Hotkeys.translateHotkeyCode
+      translateHotkeyModifiers = Defaults.Hotkeys.translateHotkeyModifiers
+      translateOutputLanguage = Defaults.Hotkeys.translateOutputLanguage
       outputMode = Defaults.outputMode
       selectedLanguage = Defaults.selectedLanguage
       selectedInputDeviceUID = Defaults.selectedInputDeviceUID
@@ -1193,11 +1197,11 @@ final class SettingsStore: ObservableObject {
       }
    }
 
-   func updateCopyLastTranscriptHotkey(_ hotkey: String, keyCode: Int, modifiers: Int) {
+   func updateTranslateHotkey(_ hotkey: String, keyCode: Int, modifiers: Int) {
       performHotkeyUpdate {
-         copyLastTranscriptHotkey = hotkey
-         copyLastTranscriptHotkeyCode = keyCode
-         copyLastTranscriptHotkeyModifiers = modifiers
+         translateHotkey = hotkey
+         translateHotkeyCode = keyCode
+         translateHotkeyModifiers = modifiers
       }
    }
 

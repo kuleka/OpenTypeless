@@ -35,16 +35,8 @@ def test_detect_email_by_app_id() -> None:
     assert detect_scene("com.apple.mail", "") == SceneType.EMAIL
 
 
-def test_detect_chat_by_app_id() -> None:
-    assert detect_scene("com.tinyspeck.slackmacgap", "") == SceneType.CHAT
-
-
-def test_detect_document_by_app_id() -> None:
-    assert detect_scene("com.apple.Notes", "") == SceneType.DOCUMENT
-
-
-def test_detect_code_by_app_id() -> None:
-    assert detect_scene("com.microsoft.VSCode", "") == SceneType.CODE
+def test_detect_email_by_app_id_outlook() -> None:
+    assert detect_scene("com.microsoft.Outlook", "") == SceneType.EMAIL
 
 
 # ── Scene detection by window_title ────────────────────
@@ -54,16 +46,12 @@ def test_detect_email_by_window_title() -> None:
     assert detect_scene("", "Inbox - Gmail - Google Chrome") == SceneType.EMAIL
 
 
-def test_detect_ai_chat_by_window_title() -> None:
-    assert detect_scene("", "ChatGPT - Chrome") == SceneType.AI_CHAT
-
-
-def test_detect_code_by_window_title() -> None:
-    assert detect_scene("", "MyProject — Xcode") == SceneType.CODE
+def test_detect_email_by_window_title_protonmail() -> None:
+    assert detect_scene("", "ProtonMail - Inbox") == SceneType.EMAIL
 
 
 def test_window_title_case_insensitive() -> None:
-    assert detect_scene("", "chatgpt session") == SceneType.AI_CHAT
+    assert detect_scene("", "inbox - gmail") == SceneType.EMAIL
 
 
 # ── Default fallback ──────────────────────────────────
@@ -77,13 +65,18 @@ def test_default_fallback_empty_context() -> None:
     assert detect_scene("", "") == SceneType.DEFAULT
 
 
+def test_default_for_non_email_apps() -> None:
+    assert detect_scene("com.tinyspeck.slackmacgap", "") == SceneType.DEFAULT
+    assert detect_scene("com.microsoft.VSCode", "") == SceneType.DEFAULT
+    assert detect_scene("com.apple.Notes", "") == SceneType.DEFAULT
+
+
 # ── First match wins ──────────────────────────────────
 
 
-def test_first_match_wins() -> None:
-    # Outlook is in email app_ids; window title also contains "Slack"
-    # app_id match on email should win since email is checked first
-    assert detect_scene("com.microsoft.Outlook", "Slack channel") == SceneType.EMAIL
+def test_app_id_match_wins_over_window_title() -> None:
+    # app_id matches email; window title is irrelevant
+    assert detect_scene("com.microsoft.Outlook", "Some random title") == SceneType.EMAIL
 
 
 # ── get_scene_config ──────────────────────────────────

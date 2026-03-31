@@ -43,7 +43,7 @@ def detect_scene(
     """Detect scene type from app context. First match wins."""
     scenes = get_prompts_data()["scenes"]
 
-    # Ordered iteration: email → chat → ai_chat → document → code → default
+    # Ordered iteration: email → default (first match wins)
     for scene_name in SceneType:
         if scene_name == SceneType.DEFAULT:
             continue

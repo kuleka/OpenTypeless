@@ -14,7 +14,7 @@ struct HotkeysSettingsView: View {
     @Environment(\.locale) private var locale
     @State private var isRecordingToggle = false
     @State private var isRecordingPushToTalk = false
-    @State private var isRecordingCopyLastTranscript = false
+    @State private var isRecordingTranslate = false
     @State private var keyMonitor: Any?
     @State private var pendingHotkeyCapture: PendingHotkeyCapture?
     @State private var activeModifierKeyCodes = Set<UInt16>()
@@ -30,7 +30,7 @@ struct HotkeysSettingsView: View {
         VStack(spacing: AppTheme.Spacing.xl) {
             toggleHotkeyCard
             pushToTalkCard
-            copyLastTranscriptCard
+            translateCard
         }
         .onDisappear {
             stopRecording()
@@ -75,21 +75,34 @@ struct HotkeysSettingsView: View {
         }
     }
 
-    private var copyLastTranscriptCard: some View {
-        SettingsCard(title: localized("Copy Last Transcript", locale: locale), icon: "doc.on.clipboard", detail: localized("Quickly pull your latest transcript back to the clipboard.", locale: locale)) {
+    private var translateCard: some View {
+        SettingsCard(title: localized("Translate", locale: locale), icon: "character.book.closed", detail: localized("Record and translate speech into a target language.", locale: locale)) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-                Text(localized("Copy the most recent transcript to the clipboard", locale: locale))
+                Text(localized("Record speech and translate into the selected language", locale: locale))
                     .font(AppTypography.caption)
                     .foregroundStyle(AppColors.textSecondary)
 
                 HotkeyRecorderRow(
-                    hotkey: settings.copyLastTranscriptHotkey,
-                    isRecording: isRecordingCopyLastTranscript,
-                    onRecord: { startRecording(forCopyLastTranscript: true) },
+                    hotkey: settings.translateHotkey,
+                    isRecording: isRecordingTranslate,
+                    onRecord: { startRecording(forTranslate: true) },
                     onClear: {
-                        settings.updateCopyLastTranscriptHotkey("", keyCode: 0, modifiers: 0)
+                        settings.updateTranslateHotkey("", keyCode: 0, modifiers: 0)
                     }
                 )
+
+                HStack {
+                    Text(localized("Target Language", locale: locale))
+                        .font(AppTypography.caption)
+                        .foregroundStyle(AppColors.textSecondary)
+                    Spacer()
+                    Picker("", selection: $settings.translateOutputLanguage) {
+                        ForEach(AppLanguage.allCases.filter { $0 != .automatic }, id: \.rawValue) { lang in
+                            Text(lang.displayName(locale: locale)).tag(lang.rawValue)
+                        }
+                    }
+                    .frame(width: 180)
+                }
             }
         }
     }
@@ -97,12 +110,12 @@ struct HotkeysSettingsView: View {
     
     private func startRecording(
         forToggle: Bool = false,
-        forCopyLastTranscript: Bool = false
+        forTranslate: Bool = false
     ) {
         stopRecording()
         isRecordingToggle = forToggle
-        isRecordingPushToTalk = !forToggle && !forCopyLastTranscript
-        isRecordingCopyLastTranscript = forCopyLastTranscript
+        isRecordingPushToTalk = !forToggle && !forTranslate
+        isRecordingTranslate = forTranslate
         HotkeyManager.setHotkeyCaptureInProgress(true)
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { event in
             if event.type == .keyDown && event.keyCode == 53 {
@@ -138,7 +151,7 @@ struct HotkeysSettingsView: View {
                     self.applyCapturedHotkey(
                         capture,
                         forToggle: forToggle,
-                        forCopyLastTranscript: forCopyLastTranscript
+                        forTranslate: forTranslate
                     )
                     self.stopRecording()
                 }
@@ -173,7 +186,7 @@ struct HotkeysSettingsView: View {
                 self.applyCapturedHotkey(
                     capture,
                     forToggle: forToggle,
-                    forCopyLastTranscript: forCopyLastTranscript
+                    forTranslate: forTranslate
                 )
                 self.stopRecording()
                 return nil
@@ -185,12 +198,12 @@ struct HotkeysSettingsView: View {
     private func applyCapturedHotkey(
         _ capture: PendingHotkeyCapture,
         forToggle: Bool,
-        forCopyLastTranscript: Bool
+        forTranslate: Bool
     ) {
         if forToggle {
             settings.updateToggleHotkey(capture.hotkeyString, keyCode: Int(capture.keyCode), modifiers: Int(capture.modifiers))
-        } else if forCopyLastTranscript {
-            settings.updateCopyLastTranscriptHotkey(capture.hotkeyString, keyCode: Int(capture.keyCode), modifiers: Int(capture.modifiers))
+        } else if forTranslate {
+            settings.updateTranslateHotkey(capture.hotkeyString, keyCode: Int(capture.keyCode), modifiers: Int(capture.modifiers))
         } else {
             settings.updatePushToTalkHotkey(capture.hotkeyString, keyCode: Int(capture.keyCode), modifiers: Int(capture.modifiers))
         }
@@ -227,7 +240,7 @@ struct HotkeysSettingsView: View {
         activeModifierKeyCodes.removeAll()
         isRecordingToggle = false
         isRecordingPushToTalk = false
-        isRecordingCopyLastTranscript = false
+        isRecordingTranslate = false
     }
     
     private func buildHotkeyString(from event: NSEvent) -> String {
