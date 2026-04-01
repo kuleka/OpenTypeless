@@ -154,10 +154,12 @@ OpenTypeless/
 
 ```
 快捷键 → RecordingCoordinator.startRecording()
-→ AudioRecorder 录音 → stopRecordingAndTranscribe()
+→ AudioRecorder 录音（输出 raw float32 PCM）→ stopRecordingAndTranscribe()
 → TranscriptionService.transcribe()
-    ├─ sttMode == .local → WhisperKitEngine（本地）
-    └─ sttMode == .remote → EngineTranscriptionEngine → POST /transcribe
+    ├─ sttMode == .local → WhisperKitEngine（本地，直接消费 float32 PCM）
+    └─ sttMode == .remote → EngineTranscriptionEngine
+        → wrapFloat32PCMAsWAV()（float32 → 16-bit WAV，加 44 字节 header）
+        → EngineClient.transcribe() → POST /transcribe
 → polishTranscribedTextIfNeeded() → PolishService → POST /polish
 → OutputManager 粘贴到光标
 ```
@@ -165,11 +167,28 @@ OpenTypeless/
 ### Engine 生命周期
 
 ```
-App 启动 → EngineProcessManager.start()（后台）
-→ 发现/启动 Engine 进程 → health polling（每 5 秒）
-→ 首次 healthy → pushConfig()（POST /config 推送 LLM/STT 密钥）
-→ ready
+App 启动 → AppCoordinator.start()
+├─ Onboarding 未完成 → Task { engineProcessManager.start() }（非阻塞）→ showOnboarding()
+└─ 正常启动 → await engineProcessManager.start()（⚠️ 必须 await，否则后续 POST /config 会失败）
+    → spawnEngine()（3 级 fallback 发现 binary，仅传 --port，不传 --host）
+    → startHealthPolling()（每 5 秒）
+    → 首次 healthy → pushConfig()（POST /config 推送 LLM/STT 密钥）
+    → ready → startNormalOperation()
+        ├─ sttMode == .remote → 跳过 WhisperKit 模型加载，初始化 EngineTranscriptionEngine
+        └─ sttMode == .local → 正常加载 WhisperKit 模型
 ```
+
+### 窗口与 Dock 图标
+
+```
+LSUIElement = YES（默认菜单栏应用，无 Dock 图标）
+打开窗口（Settings/Onboarding）→ NSApp.setActivationPolicy(.regular)（显示 Dock 图标）
+关闭窗口 → 检查是否有其他可见窗口 → 无则恢复 .accessory（隐藏 Dock 图标）
+```
+
+### 已知 SwiftUI 坑
+
+- **`.task` vs `.onAppear`**：`.task` 可能在 `@Environment` 注入完成前执行。访问 SwiftData `modelContext` 等 environment 值的同步操作应放在 `.onAppear`，只有真正需要 async 的操作放 `.task`。参考 `AIEnhancementSettingsView` 的修复。
 
 ## 用户偏好
 

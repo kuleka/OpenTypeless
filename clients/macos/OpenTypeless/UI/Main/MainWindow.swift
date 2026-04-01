@@ -482,7 +482,9 @@ final class MainWindowController {
         }
 
         OpenTypelessThemeController.shared.apply(to: window)
+        window?.delegate = windowDelegate
         window?.makeKeyAndOrderFront(nil)
+        NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
 
         if let settingsTab {
@@ -506,6 +508,7 @@ final class MainWindowController {
     
     func hide() {
         window?.orderOut(nil)
+        restoreMenuBarOnlyIfNoWindows()
     }
     
     func toggle() {
@@ -518,6 +521,30 @@ final class MainWindowController {
     
     var isVisible: Bool {
         window?.isVisible == true
+    }
+
+    // MARK: - Dock Icon Management
+
+    private let windowDelegate = MainWindowCloseDelegate()
+
+    private func restoreMenuBarOnlyIfNoWindows() {
+        let hasVisibleWindows = NSApp.windows.contains { $0.isVisible && !$0.className.contains("StatusBar") }
+        if !hasVisibleWindows {
+            let showInDock = UserDefaults.standard.bool(forKey: "showInDock")
+            NSApp.setActivationPolicy(showInDock ? .regular : .accessory)
+        }
+    }
+}
+
+private final class MainWindowCloseDelegate: NSObject, NSWindowDelegate {
+    func windowWillClose(_ notification: Notification) {
+        DispatchQueue.main.async {
+            let hasVisibleWindows = NSApp.windows.contains { $0.isVisible && !$0.className.contains("StatusBar") }
+            if !hasVisibleWindows {
+                let showInDock = UserDefaults.standard.bool(forKey: "showInDock")
+                NSApp.setActivationPolicy(showInDock ? .regular : .accessory)
+            }
+        }
     }
 }
 

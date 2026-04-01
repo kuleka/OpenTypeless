@@ -113,7 +113,7 @@ final class EngineProcessManager: EngineProcessManaging {
             let url = URL(fileURLWithPath: customPath)
             if FileManager.default.isExecutableFile(atPath: customPath) {
                 Log.boot.info("EngineProcessManager: using custom path: \(customPath)")
-                return (url, ["serve", "--host", configuration.host, "--port", String(configuration.port)])
+                return (url, ["serve", "--port", String(configuration.port)])
             }
             Log.boot.warning("EngineProcessManager: custom path not executable: \(customPath)")
         }
@@ -121,7 +121,7 @@ final class EngineProcessManager: EngineProcessManaging {
         // Priority 2: PATH lookup
         if let pathURL = findInPath("open_typeless") {
             Log.boot.info("EngineProcessManager: found on PATH: \(pathURL.path)")
-            return (pathURL, ["serve", "--host", configuration.host, "--port", String(configuration.port)])
+            return (pathURL, ["serve", "--port", String(configuration.port)])
         }
 
         // Priority 3: Repo venv fallback
@@ -129,7 +129,7 @@ final class EngineProcessManager: EngineProcessManaging {
         let venvPython = repoRoot.appendingPathComponent("engine/.venv/bin/python")
         if FileManager.default.isExecutableFile(atPath: venvPython.path) {
             Log.boot.info("EngineProcessManager: using venv python: \(venvPython.path)")
-            return (venvPython, ["-m", "open_typeless.cli", "serve", "--host", configuration.host, "--port", String(configuration.port)])
+            return (venvPython, ["-m", "open_typeless.cli", "serve", "--port", String(configuration.port)])
         }
 
         Log.boot.error("EngineProcessManager: no Engine binary found")

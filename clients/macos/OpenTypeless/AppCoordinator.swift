@@ -561,16 +561,18 @@ final class AppCoordinator {
     func start() async {
         Log.boot.info("AppCoordinator.start() entered hasCompletedOnboarding=\(settingsStore.hasCompletedOnboarding) selectedModel=\(settingsStore.selectedModel)")
 
-        // Start Engine process in background (parallel with onboarding or normal startup)
-        Task { @MainActor in
-            await engineProcessManager.start()
-        }
-
         if !settingsStore.hasCompletedOnboarding {
+            // During onboarding, start Engine in background (non-blocking)
+            Task { @MainActor in
+                await engineProcessManager.start()
+            }
             Log.boot.info("Taking onboarding path (skipping splash and normal operation until complete)")
             showOnboarding()
             return
         }
+
+        // Normal startup: await Engine process before proceeding to avoid race conditions
+        await engineProcessManager.start()
 
         Log.boot.info("Taking normal startup path: seed presets, splash, startNormalOperation")
         seedBuiltInPresetsIfNeeded()
@@ -727,73 +729,86 @@ final class AppCoordinator {
         ensureAccessibilityPermissionForDirectInsert(trigger: "startup", showFallbackAlert: false)
         await engineRuntimeCoordinator.syncEngineConfigurationOnStartup()
 
-        var modelName = settingsStore.selectedModel
-
-        if !modelManager.availableModels.contains(where: { $0.name == modelName }) {
-            Log.model.warning("Selected model \(modelName) is not recognized, resetting to default")
-            modelName = SettingsStore.Defaults.selectedModel
-            settingsStore.selectedModel = modelName
-        }
-
-        let selectedModel = modelManager.availableModels.first(where: { $0.name == modelName })
-        let selectedProvider = selectedModel?.provider ?? .whisperKit
-        let selectedDisplayName = selectedModel?.displayName ?? modelName
-        
-        await modelManager.refreshDownloadedModels()
-        let modelExists = modelManager.isModelDownloaded(modelName)
-        
-        if modelExists {
-            splashController.setLoading("Loading model...")
-            Log.model.info("Model \(modelName) found, loading...")
+        if settingsStore.sttMode == .remote {
+            // Remote STT: skip local model loading, initialize remote transcription engine
+            Log.boot.info("Remote STT mode configured, skipping local model load")
+            splashController.setLoading("Connecting to Engine...")
             do {
-                try await loadAndActivateModel(named: modelName, provider: selectedProvider)
-                Log.model.info("Model loaded successfully")
+                try await transcriptionService.loadModel(modelName: "remote", provider: .whisperKit)
+                Log.model.info("Remote transcription engine initialized")
             } catch {
-                if selectedProvider == .whisperKit {
-                    do {
-                        try await attemptWhisperModelRepairAndReload(
-                            modelName: modelName,
-                            displayName: selectedDisplayName
-                        )
-                        Log.model.info("Model repaired and loaded successfully")
-                    } catch {
-                        handleModelLoadError(error, context: "Failed to repair transcription model")
-                    }
-                } else {
-                    handleModelLoadError(error, context: "Failed to load transcription model")
-                }
+                Log.model.warning("Failed to initialize remote transcription engine: \(error)")
             }
         } else {
-            // Model missing - check if any model is available for fallback
-            let downloadedModels = await modelManager.getDownloadedModels()
-            
-            if let fallbackModel = downloadedModels.first {
-                Log.model.info("Selected model \(modelName) not found, falling back to \(fallbackModel.name)")
-                splashController.setLoading("Using \(fallbackModel.displayName)...")
-                settingsStore.selectedModel = fallbackModel.name
+            // Local STT: load WhisperKit model as before
+            var modelName = settingsStore.selectedModel
+
+            if !modelManager.availableModels.contains(where: { $0.name == modelName }) {
+                Log.model.warning("Selected model \(modelName) is not recognized, resetting to default")
+                modelName = SettingsStore.Defaults.selectedModel
+                settingsStore.selectedModel = modelName
+            }
+
+            let selectedModel = modelManager.availableModels.first(where: { $0.name == modelName })
+            let selectedProvider = selectedModel?.provider ?? .whisperKit
+            let selectedDisplayName = selectedModel?.displayName ?? modelName
+
+            await modelManager.refreshDownloadedModels()
+            let modelExists = modelManager.isModelDownloaded(modelName)
+
+            if modelExists {
+                splashController.setLoading("Loading model...")
+                Log.model.info("Model \(modelName) found, loading...")
                 do {
-                    try await loadAndActivateModel(named: fallbackModel.name, provider: fallbackModel.provider)
-                    Log.model.info("Fallback model loaded successfully")
-                } catch {
-                    handleModelLoadError(error, context: "Failed to load fallback model")
-                }
-            } else {
-                // No models available - download the selected one
-                splashController.setDownloading("Downloading \(modelName)...")
-                Log.model.info("Model \(modelName) not found, downloading...")
-                
-                do {
-                    try await modelManager.downloadModel(named: modelName) { [weak self] progress in
-                        Task { @MainActor in
-                            self?.splashController.updateProgress(progress)
-                        }
-                    }
-                    splashController.setLoading("Loading model...")
-                    Log.model.info("Model downloaded, loading...")
                     try await loadAndActivateModel(named: modelName, provider: selectedProvider)
                     Log.model.info("Model loaded successfully")
                 } catch {
-                    handleModelLoadError(error, context: "Failed to download/load model")
+                    if selectedProvider == .whisperKit {
+                        do {
+                            try await attemptWhisperModelRepairAndReload(
+                                modelName: modelName,
+                                displayName: selectedDisplayName
+                            )
+                            Log.model.info("Model repaired and loaded successfully")
+                        } catch {
+                            handleModelLoadError(error, context: "Failed to repair transcription model")
+                        }
+                    } else {
+                        handleModelLoadError(error, context: "Failed to load transcription model")
+                    }
+                }
+            } else {
+                // Model missing - check if any model is available for fallback
+                let downloadedModels = await modelManager.getDownloadedModels()
+
+                if let fallbackModel = downloadedModels.first {
+                    Log.model.info("Selected model \(modelName) not found, falling back to \(fallbackModel.name)")
+                    splashController.setLoading("Using \(fallbackModel.displayName)...")
+                    settingsStore.selectedModel = fallbackModel.name
+                    do {
+                        try await loadAndActivateModel(named: fallbackModel.name, provider: fallbackModel.provider)
+                        Log.model.info("Fallback model loaded successfully")
+                    } catch {
+                        handleModelLoadError(error, context: "Failed to load fallback model")
+                    }
+                } else {
+                    // No models available - download the selected one
+                    splashController.setDownloading("Downloading \(modelName)...")
+                    Log.model.info("Model \(modelName) not found, downloading...")
+
+                    do {
+                        try await modelManager.downloadModel(named: modelName) { [weak self] progress in
+                            Task { @MainActor in
+                                self?.splashController.updateProgress(progress)
+                            }
+                        }
+                        splashController.setLoading("Loading model...")
+                        Log.model.info("Model downloaded, loading...")
+                        try await loadAndActivateModel(named: modelName, provider: selectedProvider)
+                        Log.model.info("Model loaded successfully")
+                    } catch {
+                        handleModelLoadError(error, context: "Failed to download/load model")
+                    }
                 }
             }
         }

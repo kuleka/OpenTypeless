@@ -58,6 +58,7 @@ final class OnboardingWindowController {
 
         self.window = window
         window.makeKeyAndOrderFront(nil)
+        NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         Log.boot.info("OnboardingWindowController.showOnboarding: window visible")
     }
@@ -87,6 +88,12 @@ final class OnboardingWindowController {
         window?.close()
         window = nil
         hostingController = nil
+
+        let hasVisibleWindows = NSApp.windows.contains { $0.isVisible && !$0.className.contains("StatusBar") }
+        if !hasVisibleWindows {
+            let showInDock = UserDefaults.standard.bool(forKey: "showInDock")
+            NSApp.setActivationPolicy(showInDock ? .regular : .accessory)
+        }
     }
 
     var isShowingOnboarding: Bool {

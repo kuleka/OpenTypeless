@@ -189,10 +189,12 @@ struct AIEnhancementSettingsView: View {
          promptsCard
          contextCard
       }
-      .task {
+      .onAppear {
          loadPresets()
          loadSettingsState()
          refreshPermissionStates()
+      }
+      .task {
          await refreshLocalModels()
       }
       .onChange(of: settings.selectedPresetId) { _, newValue in
