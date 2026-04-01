@@ -109,41 +109,7 @@ final class PillFloatingIndicatorController: NSObject, ObservableObject, NSMenuD
     }
 
     func showIdleIndicator() {
-        guard !isVisible else {
-            refreshLayout(animated: false)
-            panel?.orderFrontRegardless()
-            return
-        }
-
-        guard let screen = Optional(NSScreen.screenUnderMouse()) else { return }
-
-        let state = layoutState
-
-        let panel = createPanel(contentRect: frame(for: screen, state: state))
-
-        let contentView = PillIndicatorView(
-            controller: self,
-            state: self.state,
-            isCompact: true
-        )
-        let hostingView = makeHostingView(for: contentView, size: size(for: state))
-        self.hostingView = hostingView
-
-        panel.contentView = hostingView
-        self.panel = panel
-
-        panel.alphaValue = 0
-        panel.orderFrontRegardless()
-        isVisible = true
-
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.25
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            panel.animator().alphaValue = 1
-        }
-
-        lastScreen = screen
-        startHoverIntentMonitoring()
+        hide()
     }
 
     func showForCurrentState() {

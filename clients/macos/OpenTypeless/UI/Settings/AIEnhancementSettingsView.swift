@@ -152,11 +152,9 @@ struct AIEnhancementSettingsView: View {
          providerCard
          contextCard
       }
-      .onAppear {
+      .task {
          loadSettingsState()
          refreshPermissionStates()
-      }
-      .task {
          await refreshLocalModels()
       }
       .onChange(of: settings.selectedEngineSTTProvider) { _, newValue in

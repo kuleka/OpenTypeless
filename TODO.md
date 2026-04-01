@@ -17,8 +17,8 @@
 
 ## P1.5 — UI 行为修复
 
-- [ ] **录音指示器不应常驻** — 屏幕底部的圆角矩形录音指示器（波形图）应仅在录音时显示，录音结束后隐藏，目前一直停留在屏幕上
-- [ ] **Engine & AI tab 打开时焦点跳走** — 首次打开 Engine & AI 设置页时焦点跳到上一个 app（如 VS Code），疑似 .onAppear 中某操作触发焦点变化
+- [x] **录音指示器不应常驻** — PillFloatingIndicator.showIdleIndicator() 改为调用 hide()，录音结束后隐藏
+- [x] **Engine & AI tab 打开时焦点跳走** — loadSettingsState/refreshPermissionStates 从 .onAppear 移到 .task，避免 Keychain/AXIsProcessTrusted 同步调用抢焦点
 - [x] **设置页文本框无法拖拽选中内容** — `isMovableByWindowBackground = true` 导致拖拽优先移动窗口，已改为 false
 - [x] **状态栏菜单功能清理** — 移除 AI Enhancement toggle、Prompt Preset selector、Select AI Model submenu 及相关回调
 
