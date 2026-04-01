@@ -32,13 +32,10 @@ final class AppCoordinator {
     let updateService: UpdateService
     let outputManager: OutputManager
     let historyStore: HistoryStore
-    let dictionaryStore: DictionaryStore
     let settingsStore: SettingsStore
     let contextCaptureService: ContextCaptureService
     let contextEngineService: ContextEngineService
     let toastService: ToastService
-    let automaticDictionaryLearningService: AutomaticDictionaryLearningService
-    let promptPresetStore: PromptPresetStore
     let mentionRewriteService: MentionRewriteService
     let engineProcessManager: EngineProcessManager
     let mediaPauseService: MediaPauseService
@@ -187,17 +184,10 @@ final class AppCoordinator {
         let initialOutputMode: OutputMode = settingsStore.outputMode == "directInsert" ? .directInsert : .clipboard
         self.outputManager = outputManager ?? OutputManager(outputMode: initialOutputMode)
         self.historyStore = HistoryStore(modelContext: modelContext)
-        self.dictionaryStore = DictionaryStore(modelContext: modelContext)
         self.contextCaptureService = ContextCaptureService()
         self.contextEngineService = ContextEngineService()
         self.toastWindowController = resolvedToastWindowController
         self.toastService = ToastService(presenter: toastPresenter ?? resolvedToastWindowController)
-        self.automaticDictionaryLearningService = AutomaticDictionaryLearningService(
-            snapshotProvider: contextEngineService,
-            dictionaryStore: dictionaryStore,
-            toastService: toastService
-        )
-        self.promptPresetStore = PromptPresetStore(modelContext: modelContext)
         self.mentionRewriteService = MentionRewriteService()
         self.mediaPauseService = MediaPauseService()
         self.mediaIngestionService = MediaIngestionService()
@@ -251,7 +241,6 @@ final class AppCoordinator {
             transcriptionService: self.transcriptionService,
             outputManager: self.outputManager,
             settingsStore: resolvedSettingsStore,
-            dictionaryStore: self.dictionaryStore,
             historyStore: self.historyStore,
             polishHandlers: self.polishHandlers,
             toastService: self.toastService,
@@ -259,7 +248,6 @@ final class AppCoordinator {
             contextEngineService: self.contextEngineService,
             mentionRewriteService: self.mentionRewriteService,
             permissionManager: self.permissionManager,
-            automaticDictionaryLearningService: self.automaticDictionaryLearningService,
             floatingIndicatorCoordinator: self.floatingIndicatorCoordinator,
             contextSessionCoordinator: self.contextSessionCoordinator,
             engineRuntimeCoordinator: self.engineRuntimeCoordinator
@@ -306,14 +294,6 @@ final class AppCoordinator {
 
         self.statusBarController.onToggleOutputMode = { [weak self] in
             self?.handleToggleOutputMode()
-        }
-
-        self.statusBarController.onToggleAIControlled = { [weak self] in
-            self?.handleToggleAIEnhancement()
-        }
-
-        self.statusBarController.onSelectPromptPreset = { [weak self] presetId in
-            self?.handleSelectPromptPreset(presetId)
         }
 
         self.statusBarController.onToggleFloatingIndicator = { [weak self] in
@@ -574,9 +554,7 @@ final class AppCoordinator {
         // Normal startup: await Engine process before proceeding to avoid race conditions
         await engineProcessManager.start()
 
-        Log.boot.info("Taking normal startup path: seed presets, splash, startNormalOperation")
-        seedBuiltInPresetsIfNeeded()
-        refreshStatusBarPresets()
+        Log.boot.info("Taking normal startup path: splash, startNormalOperation")
 
         splashController.show()
 
@@ -621,33 +599,12 @@ final class AppCoordinator {
     
     private func finishPostOnboardingSetup() async {
         Log.boot.info("finishPostOnboardingSetup begin")
-        seedBuiltInPresetsIfNeeded()
-        refreshStatusBarPresets()
         hotkeyCoordinator.registerHotkeysFromSettings()
 
         ensureAccessibilityPermissionForDirectInsert(trigger: "post-onboarding", showFallbackAlert: false)
         await engineRuntimeCoordinator.syncEngineConfigurationOnStartup()
         contextSessionCoordinator.updateVibeRuntimeStateFromSettings()
         Log.boot.info("finishPostOnboardingSetup complete")
-    }
-
-    private func seedBuiltInPresetsIfNeeded() {
-        do {
-            try promptPresetStore.seedBuiltInPresets()
-            Log.app.debug("Synced built-in prompt presets")
-        } catch {
-            Log.app.error("Failed to seed built-in presets: \(error)")
-        }
-    }
-
-    private func refreshStatusBarPresets() {
-        do {
-            let presets = try promptPresetStore.fetchAll()
-            let mapped = presets.map { (id: $0.id.uuidString, name: $0.name) }
-            statusBarController.updatePromptPresets(mapped)
-        } catch {
-            Log.app.error("Failed to refresh status bar presets: \(error)")
-        }
     }
 
     private func refreshStatusBarModelMenu() async {
@@ -850,7 +807,6 @@ final class AppCoordinator {
     private func currentSettingsObservationSnapshot() -> SettingsObservationSnapshot {
         SettingsObservationSnapshot(
             outputMode: settingsStore.outputMode,
-            automaticDictionaryLearningEnabled: settingsStore.automaticDictionaryLearningEnabled,
             selectedInputDeviceUID: settingsStore.selectedInputDeviceUID,
             selectedAppLanguage: settingsStore.selectedAppLanguage,
             floatingIndicatorEnabled: settingsStore.floatingIndicatorEnabled,
@@ -923,11 +879,6 @@ final class AppCoordinator {
                             toggleHotkey: self.settingsStore.toggleHotkey,
                             pushToTalkHotkey: self.settingsStore.pushToTalkHotkey
                         )
-                    }
-
-                    if previousSnapshot.automaticDictionaryLearningEnabled
-                        && !snapshot.automaticDictionaryLearningEnabled {
-                        self.automaticDictionaryLearningService.cancelObservation()
                     }
 
                     if previousSnapshot.selectedAppLanguage != snapshot.selectedAppLanguage {
@@ -1271,38 +1222,6 @@ final class AppCoordinator {
     }
 
     // MARK: - Toggle AI Enhancement
-
-    private func handleToggleAIEnhancement() {
-        settingsStore.aiEnhancementEnabled.toggle()
-        let status = settingsStore.aiEnhancementEnabled ? "enabled" : "disabled"
-        Log.app.info("AI enhancement \(status)")
-
-        if !settingsStore.aiEnhancementEnabled {
-            contextSessionCoordinator.stopLiveContextSession()
-        } else if recordingCoordinator.isRecording, contextSessionCoordinator.shouldRunLiveContextSession() {
-            contextSessionCoordinator.startLiveContextSessionIfNeeded(initialSnapshot: contextSessionCoordinator.capturedSnapshot)
-        }
-
-        contextSessionCoordinator.updateVibeRuntimeStateFromSettings()
-    }
-
-    // MARK: - Select Prompt Preset
-
-    private func handleSelectPromptPreset(_ presetId: String?) {
-        settingsStore.selectedPresetId = presetId
-
-        if let presetId = presetId,
-           let presetUUID = UUID(uuidString: presetId),
-           let allPresets = try? promptPresetStore.fetchAll(),
-           let selectedPreset = allPresets.first(where: { $0.id == presetUUID }) {
-            settingsStore.aiEnhancementPrompt = selectedPreset.prompt
-            Log.app.info("Prompt preset changed to: \(selectedPreset.name)")
-        } else {
-            Log.app.info("Prompt preset changed to: Custom")
-        }
-
-        statusBarController.updateDynamicItems()
-    }
 
     // MARK: - Toggle Floating Indicator
 

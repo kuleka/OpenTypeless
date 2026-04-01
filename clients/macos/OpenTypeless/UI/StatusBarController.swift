@@ -33,9 +33,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var recentTranscriptsSeparator: NSMenuItem?
 
     private var outputModeItem: NSMenuItem?
-    private var aiEnhancementItem: NSMenuItem?
-    private var promptPresetMenuItem: NSMenuItem?
-    private var promptPresetMenu: NSMenu?
     private var reportIssueItem: NSMenuItem?
     private var inputDeviceMenuItem: NSMenuItem?
     private var inputDeviceMenu: NSMenu?
@@ -52,9 +49,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var checkForUpdatesItem: NSMenuItem?
     private var switchableModels: [(name: String, displayName: String)] = []
 
-    private var aiModelMenu: NSMenu?
-    private var currentAIModelItem: NSMenuItem?
-    private let aiModelService = AIModelService()
 
     private var welcomePopover: NSPopover?
 
@@ -68,8 +62,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     var onClearAudioBuffer: (() async -> Void)?
     var onCancelOperation: (() async -> Void)?
     var onToggleOutputMode: (() -> Void)?
-    var onToggleAIControlled: (() -> Void)?
-    var onSelectPromptPreset: ((String?) -> Void)?
     var onToggleFloatingIndicator: (() -> Void)?
     var onToggleLaunchAtLogin: (() -> Void)?
     var onOpenHistory: (() -> Void)?
@@ -77,7 +69,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     var onSelectInputDeviceUID: ((String) -> Void)?
     var onSelectLanguage: ((AppLanguage) -> Void)?
     var onSelectModel: ((String) -> Void)?
-    var onSelectAIModel: ((String) -> Void)?
     var onCheckForUpdates: (() -> Void)?
     var onMenuWillOpen: (() async -> Void)?
 
@@ -287,31 +278,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         outputModeItem?.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: nil)
         menu.addItem(outputModeItem!)
 
-        aiEnhancementItem = NSMenuItem(
-            title: String(format: localized("AI Enhancement: %@", locale: locale), localized("Off", locale: locale)),
-            action: #selector(toggleAIEnhancement),
-            keyEquivalent: "a"
-        )
-        aiEnhancementItem?.target = self
-        aiEnhancementItem?.image = NSImage(systemSymbolName: "wand.and.stars", accessibilityDescription: nil)
-        menu.addItem(aiEnhancementItem!)
-
-        promptPresetMenu = NSMenu()
-        let customItem = NSMenuItem(
-            title: "Custom",
-            action: #selector(selectPromptPreset(_:)),
-            keyEquivalent: ""
-        )
-        customItem.target = self
-        customItem.identifier = NSUserInterfaceItemIdentifier("preset_custom")
-        customItem.state = settingsStore.selectedPresetId == nil ? .on : .off
-        promptPresetMenu?.addItem(customItem)
-
-        promptPresetMenuItem = NSMenuItem(title: localized("Prompt Preset", locale: locale), action: nil, keyEquivalent: "")
-        promptPresetMenuItem?.submenu = promptPresetMenu
-        promptPresetMenuItem?.image = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: nil)
-        menu.addItem(promptPresetMenuItem!)
-
         menu.addItem(NSMenuItem.separator())
 
         // === VIEW SECTION ===
@@ -402,23 +368,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         modelMenuItem.submenu = modelMenu
         modelMenuItem.image = NSImage(systemSymbolName: "cpu", accessibilityDescription: nil)
         menu.addItem(modelMenuItem)
-
-        aiModelMenu = NSMenu()
-        currentAIModelItem = NSMenuItem(
-            title: String(format: localized("Current: %@", locale: locale), settingsStore.aiModel),
-            action: nil,
-            keyEquivalent: ""
-        )
-        currentAIModelItem?.isEnabled = false
-        aiModelMenu?.addItem(currentAIModelItem!)
-
-        aiModelMenu?.addItem(NSMenuItem.separator())
-        refreshAIModelMenuItems()
-
-        let aiModelMenuItem = NSMenuItem(title: localized("Select AI Model", locale: locale), action: nil, keyEquivalent: "")
-        aiModelMenuItem.submenu = aiModelMenu
-        aiModelMenuItem.image = NSImage(systemSymbolName: "bolt", accessibilityDescription: nil)
-        menu.addItem(aiModelMenuItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -537,13 +486,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             : localized("Direct Insert", locale: locale)
         outputModeItem?.title = String(format: localized("Mode: %@", locale: locale), outputModeText)
 
-        // Update AI enhancement
-        let aiText = settingsStore.aiEnhancementEnabled ? localized("On", locale: locale) : localized("Off", locale: locale)
-        aiEnhancementItem?.title = String(format: localized("AI Enhancement: %@", locale: locale), aiText)
-
-        // Update prompt preset checkmarks
-        updatePromptPresetCheckmarks()
-
         // Update floating indicator
         let indicatorText = settingsStore.floatingIndicatorEnabled ? localized("On", locale: locale) : localized("Off", locale: locale)
         toggleFloatingIndicatorItem?.title = String(format: localized("Floating Indicator: %@", locale: locale), indicatorText)
@@ -564,7 +506,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         refreshInputDeviceMenu()
         refreshLanguageMenuItems()
-        refreshAIModelMenuItems()
     }
 
     private func refreshModelMenuItems() {
@@ -591,46 +532,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             item.representedObject = model.name
             item.state = settingsStore.selectedModel == model.name ? NSControl.StateValue.on : NSControl.StateValue.off
             modelMenu.addItem(item)
-        }
-    }
-
-    private func refreshAIModelMenuItems() {
-        guard let aiModelMenu = aiModelMenu else { return }
-
-        // Remove all items after the separator (index 1)
-        while aiModelMenu.items.count > 2 {
-            aiModelMenu.removeItem(at: 2)
-        }
-
-        let provider = settingsStore.currentAIProvider
-
-        // Update current model display
-        currentAIModelItem?.title = String(format: localized("Current: %@", locale: locale), settingsStore.aiModel)
-
-        guard provider == .openai || provider == .openrouter else {
-            let noModelsItem = NSMenuItem(title: localized("No models available", locale: locale), action: nil, keyEquivalent: "")
-            noModelsItem.isEnabled = false
-            aiModelMenu.addItem(noModelsItem)
-            return
-        }
-
-        guard let cachedModels = aiModelService.getCachedModels(for: provider), !cachedModels.isEmpty else {
-            let fetchItem = NSMenuItem(title: localized("Fetch models in Models", locale: locale), action: nil, keyEquivalent: "")
-            fetchItem.isEnabled = false
-            aiModelMenu.addItem(fetchItem)
-            return
-        }
-
-        for model in cachedModels {
-            let item = NSMenuItem(
-                title: model.name,
-                action: #selector(selectAIModel(_:)),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.representedObject = model.id
-            item.state = settingsStore.aiModel == model.id ? NSControl.StateValue.on : NSControl.StateValue.off
-            aiModelMenu.addItem(item)
         }
     }
 
@@ -710,53 +611,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
                 let item = NSMenuItem(title: language.pickerLabel(locale: locale), action: nil, keyEquivalent: "")
                 item.isEnabled = false
                 languageMenu.addItem(item)
-            }
-        }
-    }
-
-    func updatePromptPresets(_ presets: [(id: String, name: String)]) {
-        guard let promptPresetMenu = promptPresetMenu else { return }
-
-        promptPresetMenu.removeAllItems()
-
-        // "Custom" item (no preset selected)
-        let customItem = NSMenuItem(
-            title: localized("Custom", locale: locale),
-            action: #selector(selectPromptPreset(_:)),
-            keyEquivalent: ""
-        )
-        customItem.target = self
-        customItem.identifier = NSUserInterfaceItemIdentifier("preset_custom")
-        customItem.state = settingsStore.selectedPresetId == nil ? .on : .off
-        promptPresetMenu.addItem(customItem)
-
-        if !presets.isEmpty {
-            promptPresetMenu.addItem(NSMenuItem.separator())
-        }
-
-        for preset in presets {
-            let item = NSMenuItem(
-                title: preset.name,
-                action: #selector(selectPromptPreset(_:)),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.identifier = NSUserInterfaceItemIdentifier("preset_\(preset.id)")
-            item.state = settingsStore.selectedPresetId == preset.id ? .on : .off
-            promptPresetMenu.addItem(item)
-        }
-    }
-
-    private func updatePromptPresetCheckmarks() {
-        guard let promptPresetMenu = promptPresetMenu else { return }
-
-        for item in promptPresetMenu.items {
-            guard let identifier = item.identifier?.rawValue else { continue }
-            if identifier == "preset_custom" {
-                item.state = settingsStore.selectedPresetId == nil ? .on : .off
-            } else {
-                let presetId = identifier.replacingOccurrences(of: "preset_", with: "")
-                item.state = settingsStore.selectedPresetId == presetId ? .on : .off
             }
         }
     }
@@ -848,16 +702,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         onToggleOutputMode?()
     }
 
-    @objc private func toggleAIEnhancement() {
-        onToggleAIControlled?()
-    }
-
-    @objc private func selectPromptPreset(_ sender: NSMenuItem) {
-        guard let identifier = sender.identifier?.rawValue else { return }
-        let presetId: String? = identifier == "preset_custom" ? nil : identifier.replacingOccurrences(of: "preset_", with: "")
-        onSelectPromptPreset?(presetId)
-    }
-
     @objc private func toggleFloatingIndicator() {
         onToggleFloatingIndicator?()
     }
@@ -891,13 +735,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     @objc private func selectModel(_ sender: NSMenuItem) {
         guard let modelName = sender.representedObject as? String else { return }
         onSelectModel?(modelName)
-    }
-
-    @objc private func selectAIModel(_ sender: NSMenuItem) {
-        guard let modelId = sender.representedObject as? String else { return }
-        settingsStore.aiModel = modelId
-        onSelectAIModel?(modelId)
-        refreshAIModelMenuItems()
     }
 
     @objc private func showApp() {

@@ -19,7 +19,6 @@ struct GeneralSettingsView: View {
             languageSection
             audioInputSection
             floatingIndicatorSection
-            dictionarySection
             interfaceSection
             setupSection
             resetSection
@@ -139,21 +138,6 @@ struct GeneralSettingsView: View {
 
     private var floatingIndicatorSection: some View {
         FloatingIndicatorSettingsCard(settings: settings)
-    }
-
-    private var dictionarySection: some View {
-        SettingsCard(
-            title: localized("Dictionary", locale: locale),
-            icon: "text.book.closed",
-            detail: localized("Let OpenTypeless quietly learn vocabulary from the corrections you make over time.", locale: locale)
-        ) {
-            SettingsToggleRow(
-                title: localized("Learn corrected words automatically", locale: locale),
-                detail: localized("Add words you manually correct into your vocabulary for future transcriptions.", locale: locale),
-                isOn: $settings.automaticDictionaryLearningEnabled,
-                accessibilityIdentifier: "settings.toggle.automaticDictionaryLearningEnabled"
-            )
-        }
     }
 
     private var audioInputSection: some View {

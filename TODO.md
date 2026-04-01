@@ -10,15 +10,17 @@
 
 ## P1 — 清理无效/遗留功能
 
-- [ ] **移除 AI Enhancement 设置页** — 用户可编辑的 prompt 从未发送到 Engine，Engine 使用内置场景 prompt，此 UI 误导用户
-- [ ] **清理 Notes prompt 残留** — NotesStore/UI 已删但 `AIEnhancementSettingsView` 中仍有 notes prompt tab
-- [ ] **移除词典功能** — DictionaryView、DictionaryStore、VocabularyWord、WordReplacement、AutomaticDictionaryLearningService 及相关调用（纯客户端 word replacement，暂不需要）
+- [x] **精简 Engine & AI 设置页** — 移除无效的 prompt 编辑器、Notes prompt tab、preset 管理 UI；保留 Engine 连接、STT/LLM 配置、Vibe Mode
+- [x] **清理 Notes prompt 残留** — 移除 PromptType enum、noteEnhancementPrompt、相关 state 和方法
+- [x] **移除词典功能** — 删除 DictionaryView、DictionaryStore、VocabularyWord、WordReplacement、AutomaticDictionaryLearningService 及所有引用
+- [x] **移除 PromptPreset 系统** — 删除 PromptPreset model、PromptPresetStore、PresetManagementSheet 及 SwiftData schema 引用
 
 ## P1.5 — UI 行为修复
 
 - [ ] **录音指示器不应常驻** — 屏幕底部的圆角矩形录音指示器（波形图）应仅在录音时显示，录音结束后隐藏，目前一直停留在屏幕上
-- [ ] **状态栏菜单设置未同步** — 状态栏下拉菜单中的设置项（如 LLM 模型）未与实际 SettingsStore 同步，显示的不是用户真实配置
-- [ ] **状态栏菜单功能清理** — 审查状态栏菜单中的所有选项，移除过时/无效的功能入口，确保与当前 Engine-backed 架构一致
+- [ ] **Engine & AI tab 打开时焦点跳走** — 首次打开 Engine & AI 设置页时焦点跳到上一个 app（如 VS Code），疑似 .onAppear 中某操作触发焦点变化
+- [x] **设置页文本框无法拖拽选中内容** — `isMovableByWindowBackground = true` 导致拖拽优先移动窗口，已改为 false
+- [x] **状态栏菜单功能清理** — 移除 AI Enhancement toggle、Prompt Preset selector、Select AI Model submenu 及相关回调
 
 ## P2 — 功能完善
 

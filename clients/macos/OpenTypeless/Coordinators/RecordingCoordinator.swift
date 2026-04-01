@@ -24,7 +24,6 @@ final class RecordingCoordinator {
 
     var recordingStartTime: Date?
     var pendingTranslateTask = false
-    var lastAppliedReplacements: [(original: String, replacement: String)] = []
 
     private(set) var isStreamingTranscriptionSessionActive = false
     private var streamingAudioProcessingTask: Task<Void, Never>?
@@ -37,7 +36,6 @@ final class RecordingCoordinator {
     private let transcriptionService: TranscriptionService
     private let outputManager: OutputManager
     private let settingsStore: SettingsStore
-    private let dictionaryStore: DictionaryStore
     private let historyStore: HistoryStore
     private let polishHandlers: PolishHandlers
     private let toastService: ToastService
@@ -45,7 +43,6 @@ final class RecordingCoordinator {
     private let contextEngineService: ContextEngineService
     private let mentionRewriteService: MentionRewriteService
     private let permissionManager: PermissionManager
-    private let automaticDictionaryLearningService: AutomaticDictionaryLearningService
     private let floatingIndicatorCoordinator: FloatingIndicatorCoordinator
     private let contextSessionCoordinator: ContextSessionCoordinator
     private let engineRuntimeCoordinator: EngineRuntimeCoordinator
@@ -68,7 +65,6 @@ final class RecordingCoordinator {
         transcriptionService: TranscriptionService,
         outputManager: OutputManager,
         settingsStore: SettingsStore,
-        dictionaryStore: DictionaryStore,
         historyStore: HistoryStore,
         polishHandlers: PolishHandlers,
         toastService: ToastService,
@@ -76,7 +72,6 @@ final class RecordingCoordinator {
         contextEngineService: ContextEngineService,
         mentionRewriteService: MentionRewriteService,
         permissionManager: PermissionManager,
-        automaticDictionaryLearningService: AutomaticDictionaryLearningService,
         floatingIndicatorCoordinator: FloatingIndicatorCoordinator,
         contextSessionCoordinator: ContextSessionCoordinator,
         engineRuntimeCoordinator: EngineRuntimeCoordinator
@@ -85,7 +80,6 @@ final class RecordingCoordinator {
         self.transcriptionService = transcriptionService
         self.outputManager = outputManager
         self.settingsStore = settingsStore
-        self.dictionaryStore = dictionaryStore
         self.historyStore = historyStore
         self.polishHandlers = polishHandlers
         self.toastService = toastService
@@ -93,7 +87,6 @@ final class RecordingCoordinator {
         self.contextEngineService = contextEngineService
         self.mentionRewriteService = mentionRewriteService
         self.permissionManager = permissionManager
-        self.automaticDictionaryLearningService = automaticDictionaryLearningService
         self.floatingIndicatorCoordinator = floatingIndicatorCoordinator
         self.contextSessionCoordinator = contextSessionCoordinator
         self.engineRuntimeCoordinator = engineRuntimeCoordinator
@@ -173,7 +166,6 @@ final class RecordingCoordinator {
     // MARK: - Recording Lifecycle
 
     func startRecording(source: RecordingTriggerSource) async throws {
-        automaticDictionaryLearningService.cancelObservation()
         logRecordingStartAttempt(source: source)
 
         onEnsureGlobalKeyMonitors()
@@ -386,21 +378,15 @@ final class RecordingCoordinator {
         let diarizationSegmentsJSON = encodeDiarizationSegmentsJSON(transcriptionOutput.diarizedSegments)
         let transcribedText = transcriptionOutput.text
 
-        var (textAfterReplacements, appliedReplacements) = try dictionaryStore.applyReplacements(to: transcribedText)
-        textAfterReplacements = normalizedTranscriptionText(textAfterReplacements)
+        let normalizedText = normalizedTranscriptionText(transcribedText)
 
-        guard !isTranscriptionEffectivelyEmpty(textAfterReplacements) else {
+        guard !isTranscriptionEffectivelyEmpty(normalizedText) else {
             handleNoSpeechDetected(context: "recording")
             return
         }
-        self.lastAppliedReplacements = appliedReplacements
-
-        if !appliedReplacements.isEmpty {
-            Log.app.info("Applied \(appliedReplacements.count) dictionary replacements")
-        }
 
         // Mention rewrite: resolve spoken file mentions to app-specific syntax
-        var textAfterMentions = textAfterReplacements
+        var textAfterMentions = normalizedText
         var mentionFormattingCapabilities = contextSessionCoordinator.capturedAdapterCapabilities
         let derivedWorkspaceRoots = contextSessionCoordinator.deriveWorkspaceRoots(
             routingSignal: contextSessionCoordinator.capturedRoutingSignal,
@@ -426,14 +412,14 @@ final class RecordingCoordinator {
                 let rewriteResult: MentionRewriteResult
                 if shouldUsePlaceholderMentions {
                     rewriteResult = await mentionRewriteService.rewriteToCanonicalPlaceholders(
-                        text: textAfterReplacements,
+                        text: normalizedText,
                         capabilities: effectiveCapabilities,
                         workspaceRoots: derivedWorkspaceRoots,
                         activeDocumentPath: contextSessionCoordinator.capturedSnapshot?.appContext?.documentPath
                     )
                 } else {
                     rewriteResult = await mentionRewriteService.rewrite(
-                        text: textAfterReplacements,
+                        text: normalizedText,
                         capabilities: effectiveCapabilities,
                         workspaceRoots: derivedWorkspaceRoots,
                         activeDocumentPath: contextSessionCoordinator.capturedSnapshot?.appContext?.documentPath
@@ -500,10 +486,6 @@ final class RecordingCoordinator {
             return
         }
 
-        let directInsertSnapshot = outputManager.outputMode == .directInsert
-            && settingsStore.automaticDictionaryLearningEnabled
-            ? contextEngineService.captureFocusedTextSnapshot()
-            : nil
         var outputSucceeded = false
         do {
             if outputManager.outputMode == .directInsert {
@@ -512,15 +494,6 @@ final class RecordingCoordinator {
             let outputText = settingsStore.addTrailingSpace ? finalText + " " : finalText
             try await outputManager.output(outputText)
             outputSucceeded = true
-            if outputManager.outputMode == .directInsert,
-               settingsStore.automaticDictionaryLearningEnabled {
-                automaticDictionaryLearningService.beginObservation(
-                    preInsertSnapshot: directInsertSnapshot,
-                    insertedText: outputText
-                )
-            } else if outputManager.outputMode == .directInsert {
-                Log.app.info("Automatic dictionary learning disabled in settings; skipping observation")
-            }
         } catch {
             Log.app.error("Output failed: \(error)")
         }
@@ -786,14 +759,9 @@ final class RecordingCoordinator {
         clearStreamingSessionBindings(cancelPendingWork: false)
         isStreamingTranscriptionSessionActive = false
 
-        var (textAfterReplacements, appliedReplacements) = try dictionaryStore.applyReplacements(to: finalStreamedText)
-        textAfterReplacements = normalizedTranscriptionText(textAfterReplacements)
-        self.lastAppliedReplacements = appliedReplacements
-        if !appliedReplacements.isEmpty {
-            Log.app.info("Applied \(appliedReplacements.count) dictionary replacements")
-        }
+        let normalizedText = normalizedTranscriptionText(finalStreamedText)
 
-        guard !isTranscriptionEffectivelyEmpty(textAfterReplacements) else {
+        guard !isTranscriptionEffectivelyEmpty(normalizedText) else {
             handleNoSpeechDetected(context: "streaming recording")
             try? await outputManager.finishStreamingInsertion(finalText: "", appendTrailingSpace: false)
             return
@@ -802,7 +770,7 @@ final class RecordingCoordinator {
         var outputSucceeded = false
         do {
             try await outputManager.finishStreamingInsertion(
-                finalText: textAfterReplacements,
+                finalText: normalizedText,
                 appendTrailingSpace: settingsStore.addTrailingSpace
             )
             outputSucceeded = true
@@ -812,14 +780,14 @@ final class RecordingCoordinator {
             await outputManager.cancelStreamingInsertion(removeInsertedText: false)
         }
 
-        guard Self.shouldPersistHistory(outputSucceeded: outputSucceeded, text: textAfterReplacements) else {
+        guard Self.shouldPersistHistory(outputSucceeded: outputSucceeded, text: normalizedText) else {
             return
         }
 
         let duration = Date().timeIntervalSince(startTime)
         do {
             try historyStore.save(
-                text: textAfterReplacements,
+                text: normalizedText,
                 originalText: nil,
                 duration: duration,
                 modelUsed: settingsStore.selectedModel,

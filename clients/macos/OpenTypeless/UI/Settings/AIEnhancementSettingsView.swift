@@ -89,15 +89,10 @@ struct EngineRuntimePresentation: Equatable {
 
 struct AIEnhancementSettingsView: View {
    @ObservedObject var settings: SettingsStore
-   @Environment(\.modelContext) private var modelContext
    @Environment(\.locale) private var locale
 
-   @State private var enhancementPrompt = ""
-   @State private var noteEnhancementPrompt = ""
-   @State private var selectedPromptType: PromptType = .transcription
    @State private var showingEngineSTTAPIKey = false
    @State private var showingEngineLLMAPIKey = false
-   @State private var showingPromptSaveSuccess = false
    @State private var showAccessibilityAlert = false
    @State private var accessibilityPermissionGranted = false
    @State private var accessibilityPermissionRequestInFlight = false
@@ -107,13 +102,6 @@ struct AIEnhancementSettingsView: View {
    @State private var downloadedLocalModelNames: Set<String> = []
    @State private var activeLocalModelOperation: String?
    @State private var localModelError: String?
-
-   @State private var presets: [PromptPreset] = []
-   @State private var showPresetManagement = false
-
-   private var promptPresetStore: PromptPresetStore {
-      PromptPresetStore(modelContext: modelContext)
-   }
 
    private var engineHostBinding: Binding<String> {
       Binding(
@@ -158,50 +146,18 @@ struct AIEnhancementSettingsView: View {
       )
    }
 
-   enum PromptType: String, CaseIterable, Identifiable {
-      case transcription = "Transcription"
-      case notes = "Notes"
-
-      var id: String { rawValue }
-
-      var icon: Icon {
-         switch self {
-         case .transcription: return .mic
-         case .notes: return .stickyNote
-         }
-      }
-
-       var description: String {
-          switch self {
-          case .transcription:
-             return localized("Sent to the AI model when processing dictation for direct text insertion.", locale: .autoupdatingCurrent)
-          case .notes:
-             return
-                localized("Used when capturing notes via hotkey. Can add markdown formatting for longer content.", locale: .autoupdatingCurrent)
-          }
-       }
-   }
-
    var body: some View {
       VStack(spacing: AppTheme.Spacing.xl) {
          enableToggleCard
          providerCard
-         promptsCard
          contextCard
       }
       .onAppear {
-         loadPresets()
          loadSettingsState()
          refreshPermissionStates()
       }
       .task {
          await refreshLocalModels()
-      }
-      .onChange(of: settings.selectedPresetId) { _, newValue in
-         handlePresetChange(newValue)
-      }
-      .onChange(of: enhancementPrompt) { _, newValue in
-         handlePromptChange(newValue)
       }
       .onChange(of: settings.selectedEngineSTTProvider) { _, newValue in
          applySTTPreset(newValue)
@@ -214,12 +170,6 @@ struct AIEnhancementSettingsView: View {
       }
       .onChange(of: engineLLMAPIKey) { _, newValue in
          try? settings.saveEngineLLMAPIKey(newValue)
-      }
-      .sheet(isPresented: $showPresetManagement) {
-         PresetManagementSheet()
-            .onDisappear {
-               loadPresets()
-            }
       }
       .alert(localized("Accessibility Permission Recommended", locale: locale), isPresented: $showAccessibilityAlert) {
          Button(localized("Open System Settings", locale: locale)) {
@@ -559,75 +509,6 @@ struct AIEnhancementSettingsView: View {
       }
    }
 
-   // MARK: - Prompts Card
-
-   private var promptsCard: some View {
-      SettingsCard(title: localized("Enhancement Prompts", locale: locale), icon: "text.bubble") {
-         VStack(spacing: 16) {
-            if selectedPromptType == .transcription {
-               presetPicker
-               Divider()
-                  .overlay(AppColors.divider)
-            }
-
-            promptTypeTabs
-            promptContent
-         }
-         .opacity(settings.aiEnhancementEnabled ? 1 : 0.5)
-         .disabled(!settings.aiEnhancementEnabled)
-      }
-   }
-
-   private var validatedPresetSelection: Binding<String?> {
-      Binding(
-         get: {
-            guard let presetId = settings.selectedPresetId,
-               presets.contains(where: { $0.id.uuidString == presetId })
-            else {
-               return nil
-            }
-            return presetId
-         },
-         set: { settings.selectedPresetId = $0 }
-      )
-   }
-
-   private var presetPicker: some View {
-      VStack(alignment: .leading, spacing: 6) {
-         Text(localized("Prompt Preset", locale: locale))
-            .font(.subheadline)
-            .fontWeight(.medium)
-
-         HStack(spacing: 8) {
-            SelectField(
-               options: promptPresetOptions,
-               selection: promptPresetSelection,
-                placeholder: localized("Custom", locale: locale)
-            )
-            .frame(maxWidth: 260)
-
-            Button(localized("Manage Presets...", locale: locale)) {
-               showPresetManagement = true
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-
-            Spacer()
-
-            if let presetId = settings.selectedPresetId,
-               let preset = presets.first(where: { $0.id.uuidString == presetId })
-            {
-               Text(preset.isBuiltIn ? localized("Built-in (read-only)", locale: locale) : localized("Custom", locale: locale))
-                  .font(AppTypography.caption)
-                  .foregroundStyle(AppColors.textSecondary)
-                  .padding(.horizontal, 8)
-                  .padding(.vertical, 4)
-                  .background(AppColors.mutedSurface, in: Capsule())
-             }
-         }
-      }
-   }
-
    // MARK: - Context Card
 
    private var contextCard: some View {
@@ -742,133 +623,7 @@ struct AIEnhancementSettingsView: View {
        }
     }
 
-   private var promptTypeTabs: some View {
-      HStack(spacing: 0) {
-         ForEach(PromptType.allCases) { type in
-            promptTypeTab(type)
-         }
-      }
-      .background(AppColors.mutedSurface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-   }
-
-   private func promptTypeTab(_ type: PromptType) -> some View {
-      Button {
-         withAnimation(.spring(duration: 0.3)) {
-            selectedPromptType = type
-         }
-      } label: {
-         VStack(spacing: 3) {
-            IconView(icon: type.icon, size: 14)
-            Text(localized(type.rawValue, locale: locale))
-               .font(.caption2)
-               .fontWeight(.medium)
-         }
-         .frame(maxWidth: .infinity, maxHeight: .infinity)
-         .padding(.vertical, 10)
-         .contentShape(Rectangle())
-         .background(
-            selectedPromptType == type
-               ? AppColors.accent.opacity(0.2)
-               : Color.clear,
-            in: RoundedRectangle(cornerRadius: 8)
-         )
-         .foregroundStyle(selectedPromptType == type ? AppColors.accent : AppColors.textSecondary)
-      }
-      .buttonStyle(.plain)
-   }
-
-   @ViewBuilder
-   private var promptContent: some View {
-      let currentPrompt =
-         selectedPromptType == .transcription ? $enhancementPrompt : $noteEnhancementPrompt
-      let charCount =
-         selectedPromptType == .transcription
-         ? enhancementPrompt.count : noteEnhancementPrompt.count
-
-      let isReadOnly = selectedPromptType == .transcription && isBuiltInPresetSelected
-
-      VStack(alignment: .leading, spacing: 12) {
-          TextEditor(text: currentPrompt)
-             .font(AppTypography.body)
-             .frame(minHeight: 120, maxHeight: 220)
-             .padding(8)
-             .scrollContentBackground(.hidden)
-             .background(AppColors.inputBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                   .strokeBorder(AppColors.inputBorder, lineWidth: 1)
-             )
-             .disabled(isReadOnly)
-             .opacity(isReadOnly ? 0.7 : 1)
-
-         HStack {
-            Button(localized("Reset to Default", locale: locale)) {
-               resetCurrentPrompt()
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-
-            Spacer()
-
-             Text(String(format: localized("%d characters", locale: locale), charCount))
-                .font(AppTypography.caption)
-                .foregroundStyle(AppColors.textSecondary)
-         }
-
-          Text(selectedPromptType.description)
-             .font(AppTypography.caption)
-             .foregroundStyle(AppColors.textSecondary)
-
-         HStack {
-            Button(localized("Save Prompt", locale: locale)) {
-               saveCurrentPrompt()
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(charCount == 0 || isReadOnly)
-
-            Spacer()
-
-            if showingPromptSaveSuccess {
-               HStack(spacing: 6) {
-                  IconView(icon: .check, size: 12)
-                     .foregroundStyle(AppColors.success)
-                   Text(localized("Saved", locale: locale))
-                     .font(AppTypography.caption)
-                     .foregroundStyle(AppColors.success)
-               }
-            }
-         }
-      }
-   }
-
-   private var isBuiltInPresetSelected: Bool {
-      guard let id = settings.selectedPresetId,
-         let preset = presets.first(where: { $0.id.uuidString == id })
-      else { return false }
-      return preset.isBuiltIn
-   }
-
-   private func resetCurrentPrompt() {
-      switch selectedPromptType {
-      case .transcription:
-         settings.selectedPresetId = nil  // Reset preset to Custom
-         enhancementPrompt = localizedTranscriptionPrompt(SettingsStore.Defaults.aiEnhancementPrompt)
-      case .notes:
-         noteEnhancementPrompt = localizedNotePrompt(SettingsStore.Defaults.noteEnhancementPrompt)
-      }
-   }
-
-   private func saveCurrentPrompt() {
-      switch selectedPromptType {
-      case .transcription:
-         savePrompt()
-      case .notes:
-         saveNotePrompt()
-      }
-   }
-
     private func loadSettingsState() {
-       noteEnhancementPrompt = localizedNotePrompt(settings.noteEnhancementPrompt)
        engineSTTAPIKey = settings.loadEngineSTTAPIKey() ?? ""
        engineLLMAPIKey = settings.loadEngineLLMAPIKey() ?? ""
     }
@@ -956,66 +711,6 @@ struct AIEnhancementSettingsView: View {
       activeLocalModelOperation = nil
    }
 
-   private func savePrompt() {
-      settings.aiEnhancementPrompt = enhancementPrompt
-
-      showingPromptSaveSuccess = true
-
-      Task {
-         try? await Task.sleep(for: .seconds(3))
-         showingPromptSaveSuccess = false
-      }
-   }
-
-   private func saveNotePrompt() {
-      settings.noteEnhancementPrompt = noteEnhancementPrompt
-
-      showingPromptSaveSuccess = true
-
-      Task {
-         try? await Task.sleep(for: .seconds(3))
-         showingPromptSaveSuccess = false
-      }
-   }
-
-   private func loadPresets() {
-      do {
-         presets = try promptPresetStore.fetchAll()
-
-         if let presetId = settings.selectedPresetId {
-            if let preset = presets.first(where: { $0.id.uuidString == presetId }) {
-               enhancementPrompt = preset.prompt
-            } else {
-               settings.selectedPresetId = nil
-               enhancementPrompt = localizedTranscriptionPrompt(settings.aiEnhancementPrompt)
-            }
-         } else {
-            enhancementPrompt = localizedTranscriptionPrompt(settings.aiEnhancementPrompt)
-         }
-      } catch {
-         Log.ui.error("Failed to load presets: \(error)")
-         enhancementPrompt = localizedTranscriptionPrompt(settings.aiEnhancementPrompt)
-      }
-   }
-
-   private func handlePresetChange(_ presetId: String?) {
-      if let presetId, let preset = presets.first(where: { $0.id.uuidString == presetId }) {
-         enhancementPrompt = preset.prompt
-      }
-   }
-
-   private func handlePromptChange(_ newPrompt: String) {
-      // If text is modified and we have a selected preset, switch to Custom
-      // unless the text matches the preset exactly (e.g. initial load)
-      if let presetId = settings.selectedPresetId,
-         let preset = presets.first(where: { $0.id.uuidString == presetId })
-      {
-         if newPrompt != preset.prompt {
-            settings.selectedPresetId = nil
-         }
-      }
-   }
-
    private func refreshPermissionStates() {
       let permissionManager = PermissionManager()
       accessibilityPermissionGranted = permissionManager.checkAccessibilityPermission()
@@ -1046,45 +741,6 @@ struct AIEnhancementSettingsView: View {
    AIEnhancementSettingsView(settings: SettingsStore())
       .padding()
       .frame(width: 500)
-}
-
-private extension AIEnhancementSettingsView {
-   var promptPresetOptions: [SelectFieldOption] {
-      [SelectFieldOption(id: customPromptPresetId, displayName: localized("Custom", locale: locale))]
-         + presets.map {
-            SelectFieldOption(
-               id: $0.id.uuidString,
-               displayName: $0.name
-            )
-         }
-   }
-
-   var promptPresetSelection: Binding<String> {
-      Binding(
-         get: { settings.selectedPresetId ?? customPromptPresetId },
-         set: { newValue in
-            settings.selectedPresetId = (newValue == customPromptPresetId) ? nil : newValue
-         }
-      )
-   }
-
-   var customPromptPresetId: String { "__custom__" }
-
-   func localizedTranscriptionPrompt(_ prompt: String) -> String {
-      if prompt == SettingsStore.Defaults.aiEnhancementPrompt {
-         return localized("You are a text enhancement assistant. Improve the grammar, punctuation, and formatting of the provided text while preserving its original meaning and tone. Return only the enhanced text without any additional commentary.", locale: locale)
-      }
-
-      return prompt
-   }
-
-   func localizedNotePrompt(_ prompt: String) -> String {
-      if prompt == SettingsStore.Defaults.noteEnhancementPrompt {
-         return localized("You are a note formatting assistant. Transform the transcribed text into a well-structured note.\n\nRules:\n- Fix grammar, punctuation, and spelling errors\n- For longer content (3+ paragraphs), add markdown formatting:\n  - Use headers (## or ###) to organize sections\n  - Use bullet points or numbered lists where appropriate\n  - Use **bold** for emphasis on key terms\n- For shorter content, keep it simple with minimal formatting\n- Preserve the original meaning and tone\n- Do not add content that wasn't in the original\n- Return only the formatted note without any commentary", locale: locale)
-      }
-
-      return prompt
-   }
 }
 
 extension AIModelService.AIModel: SearchableDropdownItem {

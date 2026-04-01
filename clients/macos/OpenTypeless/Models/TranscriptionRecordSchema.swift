@@ -16,9 +16,6 @@ enum TranscriptionRecordSchema: VersionedSchema {
         [
             TranscriptionRecord.self,
             MediaFolder.self,
-            WordReplacement.self,
-            VocabularyWord.self,
-            PromptPreset.self
         ]
     }
     
@@ -130,9 +127,6 @@ enum TranscriptionRecordSchemaV1: VersionedSchema {
     static var models: [any PersistentModel.Type] {
         [
             TranscriptionRecordV1.self,
-            WordReplacement.self,
-            VocabularyWord.self,
-            PromptPreset.self
         ]
     }
     
@@ -167,9 +161,6 @@ enum TranscriptionRecordSchemaV2: VersionedSchema {
     static var models: [any PersistentModel.Type] {
         [
             TranscriptionRecord.self,
-            WordReplacement.self,
-            VocabularyWord.self,
-            PromptPreset.self
         ]
     }
 
@@ -212,9 +203,6 @@ enum TranscriptionRecordSchemaV3: VersionedSchema {
     static var models: [any PersistentModel.Type] {
         [
             TranscriptionRecord.self,
-            WordReplacement.self,
-            VocabularyWord.self,
-            PromptPreset.self
         ]
     }
 
@@ -260,9 +248,6 @@ enum TranscriptionRecordSchemaV4: VersionedSchema {
     static var models: [any PersistentModel.Type] {
         [
             TranscriptionRecord.self,
-            WordReplacement.self,
-            VocabularyWord.self,
-            PromptPreset.self
         ]
     }
 
@@ -326,9 +311,6 @@ enum TranscriptionRecordSchemaV5: VersionedSchema {
         [
             TranscriptionRecord.self,
             MediaFolder.self,
-            WordReplacement.self,
-            VocabularyWord.self,
-            PromptPreset.self
         ]
     }
 

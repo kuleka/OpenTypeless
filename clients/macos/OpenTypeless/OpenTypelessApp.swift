@@ -200,9 +200,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return try ModelContainer(
             for: TranscriptionRecord.self,
             MediaFolder.self,
-            WordReplacement.self,
-            VocabularyWord.self,
-            PromptPreset.self,
             configurations: configuration
         )
     }
@@ -445,42 +442,27 @@ final class SwiftDataStoreRepairService {
         case .v1:
             container = try ModelContainer(
                 for: TranscriptionRecordSchemaV1.TranscriptionRecordV1.self,
-                WordReplacement.self,
-                VocabularyWord.self,
-                    PromptPreset.self,
                 configurations: configuration
             )
         case .v2:
             container = try ModelContainer(
                 for: TranscriptionRecordSchemaV2.TranscriptionRecord.self,
-                WordReplacement.self,
-                VocabularyWord.self,
-                    PromptPreset.self,
                 configurations: configuration
             )
         case .v3:
             container = try ModelContainer(
                 for: TranscriptionRecordSchemaV3.TranscriptionRecord.self,
-                WordReplacement.self,
-                VocabularyWord.self,
-                    PromptPreset.self,
                 configurations: configuration
             )
         case .v4:
             container = try ModelContainer(
                 for: TranscriptionRecordSchemaV4.TranscriptionRecord.self,
-                WordReplacement.self,
-                VocabularyWord.self,
-                    PromptPreset.self,
                 configurations: configuration
             )
         case .v5:
             container = try ModelContainer(
                 for: TranscriptionRecord.self,
                 MediaFolder.self,
-                WordReplacement.self,
-                VocabularyWord.self,
-                    PromptPreset.self,
                 configurations: configuration
             )
         }

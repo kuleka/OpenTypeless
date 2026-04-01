@@ -16,14 +16,12 @@ enum MainNavItem: String, Identifiable {
     case history = "History"
     case transcribe = "Transcribe"
     case models = "Models"
-    case dictionary = "Dictionary"
     case settings = "Settings"
 
     static let primaryNavigationItems: [MainNavItem] = [
         .home,
         .history,
         .transcribe,
-        .dictionary,
         .models,
         .settings
     ]
@@ -40,7 +38,6 @@ enum MainNavItem: String, Identifiable {
         case .history: return "clock.fill"
         case .transcribe: return "waveform"
         case .models: return "cpu"
-        case .dictionary: return "text.book.closed"
         case .settings: return "gearshape"
         }
     }
@@ -229,8 +226,6 @@ struct MainWindow: View {
             } else {
                 comingSoonView(for: selectedNav)
             }
-        case .dictionary:
-            DictionaryView()
         case .settings:
             SettingsContainerView(settings: settingsStore, initialTab: selectedSettingsTab)
         }
@@ -462,7 +457,7 @@ final class MainWindowController {
             window.titlebarSeparatorStyle = .none
             window.toolbar = nil
             window.toolbarStyle = .unifiedCompact
-            window.isMovableByWindowBackground = true
+            window.isMovableByWindowBackground = false
             window.backgroundColor = .clear
             window.isOpaque = false
             window.hasShadow = true

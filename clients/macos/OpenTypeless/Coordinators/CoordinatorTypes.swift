@@ -173,7 +173,6 @@ struct EngineSettingsSnapshot: Equatable {
 
 struct SettingsObservationSnapshot: Equatable {
     let outputMode: String
-    let automaticDictionaryLearningEnabled: Bool
     let selectedInputDeviceUID: String
     let selectedAppLanguage: AppLanguage
     let floatingIndicatorEnabled: Bool

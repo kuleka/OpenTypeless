@@ -357,7 +357,6 @@ final class SettingsStore: ObservableObject {
        static let themeMode = OpenTypelessThemeMode.system.rawValue
       static let lightThemePresetID = OpenTypelessThemePresetCatalog.defaultPresetID
       static let darkThemePresetID = OpenTypelessThemePresetCatalog.defaultPresetID
-      static let automaticDictionaryLearningEnabled = true
       static let selectedInputDeviceUID = ""
       static let aiModel = "openai/gpt-4o-mini"
       static let aiEnhancementPrompt =
@@ -366,20 +365,6 @@ final class SettingsStore: ObservableObject {
       static let floatingIndicatorType = FloatingIndicatorType.pill.rawValue
       static let pillFloatingIndicatorOffsetX = 0.0
       static let pillFloatingIndicatorOffsetY = 0.0
-      static let noteEnhancementPrompt = """
-         You are a note formatting assistant. Transform the transcribed text into a well-structured note.
-
-         Rules:
-         - Fix grammar, punctuation, and spelling errors
-         - For longer content (3+ paragraphs), add markdown formatting:
-           - Use headers (## or ###) to organize sections
-           - Use bullet points or numbered lists where appropriate
-           - Use **bold** for emphasis on key terms
-         - For shorter content, keep it simple with minimal formatting
-         - Preserve the original meaning and tone
-         - Do not add content that wasn't in the original
-         - Return only the formatted note without any commentary
-         """
       static let mentionTemplateOverridesJSON = "{}"
 
       enum Hotkeys {
@@ -439,8 +424,6 @@ final class SettingsStore: ObservableObject {
    var darkThemePresetID: String = Defaults.darkThemePresetID {
       didSet { notifyThemeDidChange() }
    }
-   @AppStorage("automaticDictionaryLearningEnabled", store: SettingsStoreRuntime.appStorageStore)
-   var automaticDictionaryLearningEnabled: Bool = Defaults.automaticDictionaryLearningEnabled
    @AppStorage("selectedInputDeviceUID", store: SettingsStoreRuntime.appStorageStore)
    var selectedInputDeviceUID: String = Defaults.selectedInputDeviceUID
    @AppStorage("sttMode", store: SettingsStoreRuntime.appStorageStore)
@@ -477,8 +460,6 @@ final class SettingsStore: ObservableObject {
    var openAIModelsCacheTimestamp: TimeInterval = 0
    @AppStorage("aiEnhancementPrompt", store: SettingsStoreRuntime.appStorageStore)
    var aiEnhancementPrompt: String = Defaults.aiEnhancementPrompt
-   @AppStorage("noteEnhancementPrompt", store: SettingsStoreRuntime.appStorageStore)
-   var noteEnhancementPrompt: String = Defaults.noteEnhancementPrompt
    @AppStorage("floatingIndicatorEnabled", store: SettingsStoreRuntime.appStorageStore)
    var floatingIndicatorEnabled: Bool = Defaults.floatingIndicatorEnabled
    @AppStorage("floatingIndicatorType", store: SettingsStoreRuntime.appStorageStore)
