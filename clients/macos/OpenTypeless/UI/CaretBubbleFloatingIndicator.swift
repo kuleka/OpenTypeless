@@ -379,28 +379,12 @@ private struct CaretBubbleIndicatorView: View {
 
     var body: some View {
         ZStack(alignment: .leading) {
-            actionBubble(icon: "xmark", isDestructive: false, action: controller.handleCancelTapped)
-                .opacity(showsHoverActions ? 1 : 0)
-                .offset(
-                    x: controller.actionRevealWidth == 0 ? 10 : 0,
-                    y: 9
-                )
-
             centerBubble
-                .offset(x: controller.actionRevealWidth, y: 6)
-
-            actionBubble(icon: nil, isDestructive: true, action: controller.handleStopTapped)
-                .opacity(showsHoverActions ? 1 : 0)
-                .offset(
-                    x: controller.actionRevealWidth + 48,
-                    y: 9
-                )
+                .offset(x: 0, y: 6)
         }
-        .frame(width: 98, height: 40, alignment: .leading)
+        .frame(width: 50, height: 40, alignment: .leading)
         .contentShape(Rectangle())
         .onHover { controller.setHover($0) }
-        .animation(.spring(response: 0.24, dampingFraction: 0.82), value: showsHoverActions)
-        .animation(.spring(response: 0.24, dampingFraction: 0.82), value: controller.actionRevealWidth)
         .simultaneousGesture(
             DragGesture(minimumDistance: 4)
                 .onChanged { _ in

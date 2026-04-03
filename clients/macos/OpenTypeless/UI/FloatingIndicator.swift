@@ -334,9 +334,7 @@ struct NotchIndicatorView: View {
     
     private var leftSide: some View {
         HStack(spacing: 8) {
-            if state.isRecording {
-                stopButton
-            } else {
+            if !state.isRecording {
                 processingIndicator
             }
 

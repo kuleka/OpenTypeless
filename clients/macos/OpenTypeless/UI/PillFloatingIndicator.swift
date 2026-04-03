@@ -41,7 +41,7 @@ final class PillFloatingIndicatorController: NSObject, ObservableObject, NSMenuD
         static let compactSize = CGSize(width: 40, height: 10)
         static let compactPillBottomPadding: CGFloat = 6
         static let hoverSize = CGSize(width: 332, height: 68)
-        static let recordingSize = CGSize(width: 124, height: 30)
+        static let recordingSize = CGSize(width: 72, height: 30)
         static let processingSize = CGSize(width: 124, height: 30)
 
         static let compactBottomInset: CGFloat = 6
@@ -777,46 +777,12 @@ struct PillIndicatorView: View {
             expandedPillShell
 
             if state.isRecording {
-                HStack(spacing: 8) {
-                    Button {
-                        controller.handleCancelButtonTapped()
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .fill(AppColors.overlayTextPrimary.opacity(0.1))
-
-                            Image(systemName: "xmark")
-                                .font(.system(size: 8, weight: .bold))
-                                .foregroundStyle(AppColors.overlayTextPrimary.opacity(0.9))
-                        }
-                        .frame(width: 18, height: 18)
-                    }
-                    .buttonStyle(.plain)
-
-                    FloatingIndicatorWaveformView(
-                        audioLevel: state.audioLevel,
-                        isRecording: state.isRecording,
-                        style: .pill
-                    )
-                    .frame(width: 46, height: 14)
-
-                    Button {
-                        controller.handleStopButtonTapped()
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .fill(AppColors.overlayRecording)
-
-                            RoundedRectangle(cornerRadius: 1.5)
-                                .fill(AppColors.overlayTextPrimary)
-                                .frame(width: 6, height: 6)
-                        }
-                        .frame(width: 18, height: 18)
-                        .shadow(color: AppColors.overlayRecording.opacity(0.25), radius: 4)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 9)
+                FloatingIndicatorWaveformView(
+                    audioLevel: state.audioLevel,
+                    isRecording: state.isRecording,
+                    style: .pill
+                )
+                .frame(width: 46, height: 14)
             } else {
                 HStack(spacing: 6) {
                     ProgressView()
