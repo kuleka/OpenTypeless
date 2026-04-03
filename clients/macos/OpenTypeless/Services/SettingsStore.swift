@@ -125,13 +125,19 @@ struct EngineRuntimeState: Equatable, Sendable {
    let detail: String
    let version: String?
    let missingConfiguration: MissingConfiguration?
+   let uptimeSeconds: Int?
+   let requestsTotal: Int?
+   let requestsFailed: Int?
 
    static func checking(detail: String = "Checking Engine runtime...") -> EngineRuntimeState {
       EngineRuntimeState(
          phase: .checking,
          detail: detail,
          version: nil,
-         missingConfiguration: nil
+         missingConfiguration: nil,
+         uptimeSeconds: nil,
+         requestsTotal: nil,
+         requestsFailed: nil
       )
    }
 
@@ -142,7 +148,10 @@ struct EngineRuntimeState: Equatable, Sendable {
          phase: .offline,
          detail: detail,
          version: nil,
-         missingConfiguration: nil
+         missingConfiguration: nil,
+         uptimeSeconds: nil,
+         requestsTotal: nil,
+         requestsFailed: nil
       )
    }
 
@@ -154,7 +163,10 @@ struct EngineRuntimeState: Equatable, Sendable {
          phase: .needsConfiguration,
          detail: detail,
          version: nil,
-         missingConfiguration: missingConfiguration
+         missingConfiguration: missingConfiguration,
+         uptimeSeconds: nil,
+         requestsTotal: nil,
+         requestsFailed: nil
       )
    }
 
@@ -163,19 +175,28 @@ struct EngineRuntimeState: Equatable, Sendable {
          phase: .syncing,
          detail: "Syncing the current Engine settings...",
          version: version,
-         missingConfiguration: nil
+         missingConfiguration: nil,
+         uptimeSeconds: nil,
+         requestsTotal: nil,
+         requestsFailed: nil
       )
    }
 
    static func ready(
       version: String?,
-      detail: String
+      detail: String,
+      uptimeSeconds: Int? = nil,
+      requestsTotal: Int? = nil,
+      requestsFailed: Int? = nil
    ) -> EngineRuntimeState {
       EngineRuntimeState(
          phase: .ready,
          detail: detail,
          version: version,
-         missingConfiguration: nil
+         missingConfiguration: nil,
+         uptimeSeconds: uptimeSeconds,
+         requestsTotal: requestsTotal,
+         requestsFailed: requestsFailed
       )
    }
 
@@ -184,7 +205,10 @@ struct EngineRuntimeState: Equatable, Sendable {
          phase: .error,
          detail: detail,
          version: nil,
-         missingConfiguration: nil
+         missingConfiguration: nil,
+         uptimeSeconds: nil,
+         requestsTotal: nil,
+         requestsFailed: nil
       )
    }
 

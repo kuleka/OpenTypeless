@@ -52,7 +52,7 @@
 
 ## 2. GET /health — 健康检查
 
-Client 用此端点确认 Engine 是否在线。
+Client 用此端点确认 Engine 是否在线，同时获取配置状态和运行统计。
 
 ### Request
 
@@ -67,7 +67,15 @@ GET /health
 ```json
 {
   "status": "ok",
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "configured": true,
+  "stt_configured": true,
+  "uptime_seconds": 3612,
+  "stats": {
+    "requests_total": 42,
+    "requests_failed": 1,
+    "last_request_at": "2026-04-01T10:23:00+00:00"
+  }
 }
 ```
 
@@ -75,6 +83,15 @@ GET /health
 |------|------|------|
 | `status` | string | 固定为 `"ok"` |
 | `version` | string | Engine 的语义化版本号 |
+| `configured` | bool | LLM 是否已通过 `POST /config` 配置（默认 `false`） |
+| `stt_configured` | bool | STT 是否已配置（默认 `false`） |
+| `uptime_seconds` | int | Engine 启动以来的秒数（默认 `0`） |
+| `stats` | object\|null | 请求统计（默认 `null`） |
+| `stats.requests_total` | int | `/polish` 和 `/transcribe` 的总请求数 |
+| `stats.requests_failed` | int | 失败请求数（4xx/5xx 响应） |
+| `stats.last_request_at` | string\|null | 最后一次请求的 ISO 8601 UTC 时间戳 |
+
+> **向后兼容**：所有新字段均有默认值。旧版客户端忽略未知字段；新版客户端连接旧版 Engine 时新字段为 null/nil。
 
 ---
 

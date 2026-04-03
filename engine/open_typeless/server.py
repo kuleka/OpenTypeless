@@ -4,6 +4,8 @@ import os
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import JSONResponse
@@ -24,6 +26,7 @@ from .models import (
     MatchRule,
     PolishRequest,
     PolishResponse,
+    RequestStats,
     SceneConfig,
     TaskType,
     TranscribeResponse,
@@ -36,8 +39,21 @@ from .stt import STTError
 _context_overrides: dict[str, SceneConfig] = {}
 
 
+@dataclass
+class _EngineStats:
+    requests_total: int = 0
+    requests_failed: int = 0
+    last_request_at: str | None = None
+
+
+_stats = _EngineStats()
+_start_time: float = 0.0
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    global _start_time
+    _start_time = time.time()
     load_prompts()
 
     if os.environ.get("OPEN_TYPELESS_STUB") == "1":
@@ -62,7 +78,17 @@ app = FastAPI(title="OpenTypeless Engine", version=__version__, lifespan=lifespa
 
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
-    return HealthResponse(version=__version__)
+    return HealthResponse(
+        version=__version__,
+        configured=is_configured(),
+        stt_configured=is_stt_configured(),
+        uptime_seconds=int(time.time() - _start_time) if _start_time else 0,
+        stats=RequestStats(
+            requests_total=_stats.requests_total,
+            requests_failed=_stats.requests_failed,
+            last_request_at=_stats.last_request_at,
+        ),
+    )
 
 
 # ── POST /config ───────────────────────────────────────
@@ -90,7 +116,11 @@ async def post_transcribe(
     file: UploadFile = File(...),
     language: str = Form("auto"),
 ) -> JSONResponse | TranscribeResponse:
+    _stats.requests_total += 1
+    _stats.last_request_at = datetime.now(timezone.utc).isoformat()
+
     if not is_stt_configured():
+        _stats.requests_failed += 1
         return _error(
             503,
             "STT_NOT_CONFIGURED",
@@ -103,6 +133,7 @@ async def post_transcribe(
     try:
         text = await _stt_mod.transcribe(audio_bytes, language=language)
     except STTError as e:
+        _stats.requests_failed += 1
         return _error(502, "STT_FAILURE", str(e))
     stt_ms = int((time.perf_counter() - stt_start) * 1000)
 
@@ -119,12 +150,17 @@ async def post_transcribe(
 
 @app.post("/polish", response_model=PolishResponse)
 async def post_polish(req: PolishRequest) -> JSONResponse | PolishResponse:
+    _stats.requests_total += 1
+    _stats.last_request_at = datetime.now(timezone.utc).isoformat()
+
     # Check configuration
     if not is_configured():
+        _stats.requests_failed += 1
         return _error(503, "NOT_CONFIGURED", "Engine is not configured. Call POST /config first.")
 
     # Validate task
     if req.options.task == TaskType.TRANSLATE and not req.options.output_language:
+        _stats.requests_failed += 1
         return _error(422, "VALIDATION_ERROR", "output_language is required when task is translate")
 
     from .config import get_config
@@ -156,6 +192,7 @@ async def post_polish(req: PolishRequest) -> JSONResponse | PolishResponse:
     try:
         polished_text = await _llm_mod.polish(prompt, model=model_override)
     except LLMError as e:
+        _stats.requests_failed += 1
         return _error(502, "LLM_FAILURE", str(e))
     llm_ms = int((time.perf_counter() - llm_start) * 1000)
 

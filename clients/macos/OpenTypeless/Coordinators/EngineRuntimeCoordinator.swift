@@ -107,7 +107,10 @@ final class EngineRuntimeCoordinator {
                 settingsStore.updateEngineRuntimeState(
                     .ready(
                         version: healthResponse.version,
-                        detail: readyRuntimeDetail(for: settingsStore.sttMode)
+                        detail: readyRuntimeDetail(for: settingsStore.sttMode),
+                        uptimeSeconds: healthResponse.uptimeSeconds,
+                        requestsTotal: healthResponse.stats?.requestsTotal,
+                        requestsFailed: healthResponse.stats?.requestsFailed
                     )
                 )
 

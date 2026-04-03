@@ -19,9 +19,31 @@ struct ProviderConfiguration: Codable, Equatable {
     }
 }
 
+struct HealthStatsResponse: Codable, Equatable {
+    let requestsTotal: Int
+    let requestsFailed: Int
+    let lastRequestAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case requestsTotal = "requests_total"
+        case requestsFailed = "requests_failed"
+        case lastRequestAt = "last_request_at"
+    }
+}
+
 struct HealthResponse: Codable, Equatable {
     let status: String
     let version: String
+    let configured: Bool?
+    let sttConfigured: Bool?
+    let uptimeSeconds: Int?
+    let stats: HealthStatsResponse?
+
+    enum CodingKeys: String, CodingKey {
+        case status, version, configured, stats
+        case sttConfigured = "stt_configured"
+        case uptimeSeconds = "uptime_seconds"
+    }
 }
 
 struct ConfigRequest: Codable, Equatable {

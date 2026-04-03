@@ -103,9 +103,19 @@ class TranscribeResponse(BaseModel):
 # ── Health ─────────────────────────────────────────────
 
 
+class RequestStats(BaseModel):
+    requests_total: int = 0
+    requests_failed: int = 0
+    last_request_at: Optional[str] = None
+
+
 class HealthResponse(BaseModel):
     status: str = "ok"
     version: str
+    configured: bool = False
+    stt_configured: bool = False
+    uptime_seconds: int = 0
+    stats: Optional[RequestStats] = None
 
 
 # ── Contexts ───────────────────────────────────────────

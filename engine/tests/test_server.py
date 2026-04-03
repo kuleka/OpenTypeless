@@ -31,6 +31,15 @@ def _reset_config(monkeypatch):
     monkeypatch.setattr(cfg, "_config", None)
 
 
+@pytest.fixture(autouse=True)
+def _reset_stats():
+    import open_typeless.server as srv
+
+    srv._stats.requests_total = 0
+    srv._stats.requests_failed = 0
+    srv._stats.last_request_at = None
+
+
 # ── GET /health ────────────────────────────────────────
 
 
@@ -40,6 +49,48 @@ def test_health() -> None:
     data = resp.json()
     assert data["status"] == "ok"
     assert "version" in data
+    assert data["configured"] is False
+    assert data["stt_configured"] is False
+    assert data["uptime_seconds"] >= 0
+    assert data["stats"]["requests_total"] == 0
+    assert data["stats"]["requests_failed"] == 0
+    assert data["stats"]["last_request_at"] is None
+
+
+def test_health_after_config() -> None:
+    client.post("/config", json=_valid_config)
+    resp = client.get("/health")
+    data = resp.json()
+    assert data["configured"] is True
+    assert data["stt_configured"] is True
+
+
+def test_health_after_llm_only_config() -> None:
+    client.post("/config", json={"llm": _valid_config["llm"]})
+    resp = client.get("/health")
+    data = resp.json()
+    assert data["configured"] is True
+    assert data["stt_configured"] is False
+
+
+def test_health_stats_after_successful_request() -> None:
+    client.post("/config", json=_valid_config)
+    with patch("open_typeless.llm.polish", new_callable=AsyncMock, return_value="polished"):
+        client.post("/polish", json={"text": "hello"})
+    resp = client.get("/health")
+    data = resp.json()
+    assert data["stats"]["requests_total"] == 1
+    assert data["stats"]["requests_failed"] == 0
+    assert data["stats"]["last_request_at"] is not None
+
+
+def test_health_stats_after_failed_request() -> None:
+    # No config → /polish returns 503
+    client.post("/polish", json={"text": "hello"})
+    resp = client.get("/health")
+    data = resp.json()
+    assert data["stats"]["requests_total"] == 1
+    assert data["stats"]["requests_failed"] == 1
 
 
 # ── POST /config ───────────────────────────────────────

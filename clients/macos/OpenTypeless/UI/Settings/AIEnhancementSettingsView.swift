@@ -273,6 +273,17 @@ struct AIEnhancementSettingsView: View {
                .font(AppTypography.caption)
                .foregroundStyle(AppColors.textSecondary)
 
+            if settings.engineRuntimeState.phase == .ready,
+               let uptime = settings.engineRuntimeState.uptimeSeconds {
+               Text(engineStatsText(
+                  uptime: uptime,
+                  total: settings.engineRuntimeState.requestsTotal,
+                  failed: settings.engineRuntimeState.requestsFailed
+               ))
+               .font(AppTypography.tiny)
+               .foregroundStyle(AppColors.textTertiary)
+            }
+
             if let guidance = engineRuntimePresentation.guidance {
                SettingsInfoBanner(
                   icon: engineRuntimeBannerIcon,
@@ -636,6 +647,25 @@ struct AIEnhancementSettingsView: View {
       settings.engineLLMAPIBase = preset.defaultAPIBase
       settings.engineLLMModel = preset.defaultModel
       engineLLMAPIKey = settings.loadEngineLLMAPIKey(for: preset) ?? ""
+   }
+
+   private func engineStatsText(uptime: Int, total: Int?, failed: Int?) -> String {
+      let uptimeStr = formatUptime(uptime)
+      if let total, total > 0 {
+         let failedStr = (failed ?? 0) > 0 ? " (\(failed!) failed)" : ""
+         return "Uptime: \(uptimeStr) · Requests: \(total)\(failedStr)"
+      }
+      return "Uptime: \(uptimeStr)"
+   }
+
+   private func formatUptime(_ seconds: Int) -> String {
+      if seconds < 60 { return "\(seconds)s" }
+      let minutes = seconds / 60
+      if minutes < 60 { return "\(minutes)m" }
+      let hours = minutes / 60
+      let remainingMinutes = minutes % 60
+      if remainingMinutes == 0 { return "\(hours)h" }
+      return "\(hours)h \(remainingMinutes)m"
    }
 
    private var engineRuntimeTint: Color {
