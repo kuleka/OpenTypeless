@@ -59,7 +59,9 @@ final class HistoryStore {
         originalSourceURL: String? = nil,
         managedMediaPath: String? = nil,
         thumbnailPath: String? = nil,
-        folderID: UUID? = nil
+        folderID: UUID? = nil,
+        polishMs: Int? = nil,
+        contextDetected: String? = nil
     ) throws -> TranscriptionRecord {
         let record = TranscriptionRecord(
             text: text,
@@ -72,7 +74,9 @@ final class HistoryStore {
             sourceDisplayName: sourceDisplayName,
             originalSourceURL: originalSourceURL,
             managedMediaPath: managedMediaPath,
-            thumbnailPath: thumbnailPath
+            thumbnailPath: thumbnailPath,
+            polishMs: polishMs,
+            contextDetected: contextDetected
         )
 
         if let folderID,

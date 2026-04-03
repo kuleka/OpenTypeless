@@ -17,6 +17,8 @@ final class PolishService {
         let modelUsed: String?
         let usedFallback: Bool
         let warningMessage: String?
+        let llmMs: Int?
+        let totalMs: Int?
     }
 
     enum PolishError: Error, LocalizedError, Equatable {
@@ -50,7 +52,9 @@ final class PolishService {
                 contextDetected: nil,
                 modelUsed: nil,
                 usedFallback: false,
-                warningMessage: nil
+                warningMessage: nil,
+                llmMs: nil,
+                totalMs: nil
             )
         }
 
@@ -74,7 +78,9 @@ final class PolishService {
                 contextDetected: trimmedValue(response.contextDetected),
                 modelUsed: trimmedValue(response.modelUsed),
                 usedFallback: false,
-                warningMessage: nil
+                warningMessage: nil,
+                llmMs: response.llmMs,
+                totalMs: response.totalMs
             )
         } catch let error as EngineClientError {
             switch error {
@@ -86,7 +92,9 @@ final class PolishService {
                     contextDetected: nil,
                     modelUsed: nil,
                     usedFallback: true,
-                    warningMessage: message
+                    warningMessage: message,
+                    llmMs: nil,
+                    totalMs: nil
                 )
             default:
                 throw error

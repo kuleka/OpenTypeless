@@ -208,6 +208,8 @@ struct RecordingPolishOutcome: Equatable {
     let enhancedWithModel: String?
     let didAttemptPolish: Bool
     let usedFallback: Bool
+    let polishMs: Int?
+    let contextDetected: String?
 }
 
 // MARK: - Recording Types

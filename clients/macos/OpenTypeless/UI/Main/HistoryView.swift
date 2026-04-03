@@ -587,7 +587,12 @@ struct HistoryTranscriptionRow: View {
                         metadataItem(icon: "cpu", text: record.modelUsed)
 
                         if let enhancedWith = record.enhancedWith {
-                            metadataItem(icon: "sparkles", text: localized("via %@", locale: locale).replacingOccurrences(of: "%@", with: enhancedWith))
+                            let timingSuffix = record.polishMs.map { " (\($0)ms)" } ?? ""
+                            metadataItem(icon: "sparkles", text: localized("via %@", locale: locale).replacingOccurrences(of: "%@", with: enhancedWith) + timingSuffix)
+                        }
+
+                        if let context = record.contextDetected, context != "default" {
+                            metadataItem(icon: context == "email" ? "envelope" : "doc.text", text: context)
                         }
                     }
                 }

@@ -507,7 +507,9 @@ final class RecordingCoordinator {
                 duration: duration,
                 modelUsed: settingsStore.selectedModel,
                 enhancedWith: enhancedWithModel,
-                diarizationSegmentsJSON: diarizationSegmentsJSON
+                diarizationSegmentsJSON: diarizationSegmentsJSON,
+                polishMs: polishOutcome.polishMs,
+                contextDetected: polishOutcome.contextDetected
             )
             onUpdateRecentTranscriptsMenu()
         } catch {
@@ -529,7 +531,9 @@ final class RecordingCoordinator {
                 originalText: nil,
                 enhancedWithModel: nil,
                 didAttemptPolish: false,
-                usedFallback: false
+                usedFallback: false,
+                polishMs: nil,
+                contextDetected: nil
             )
         }
 
@@ -546,7 +550,9 @@ final class RecordingCoordinator {
                 originalText: text,
                 enhancedWithModel: nil,
                 didAttemptPolish: false,
-                usedFallback: true
+                usedFallback: true,
+                polishMs: nil,
+                contextDetected: nil
             )
         }
 
@@ -566,7 +572,9 @@ final class RecordingCoordinator {
                 originalText: result.rawTranscript,
                 enhancedWithModel: result.usedFallback ? nil : (result.modelUsed ?? settingsStore.engineLLMModel),
                 didAttemptPolish: true,
-                usedFallback: result.usedFallback
+                usedFallback: result.usedFallback,
+                polishMs: result.totalMs,
+                contextDetected: result.contextDetected
             )
         } catch let error as EngineClientError {
             Log.app.error("Engine polish failed: \(error)")
@@ -582,7 +590,9 @@ final class RecordingCoordinator {
                 originalText: text,
                 enhancedWithModel: nil,
                 didAttemptPolish: true,
-                usedFallback: true
+                usedFallback: true,
+                polishMs: nil,
+                contextDetected: nil
             )
         } catch {
             Log.app.error("Engine polish failed: \(error)")
@@ -600,7 +610,9 @@ final class RecordingCoordinator {
                 originalText: text,
                 enhancedWithModel: nil,
                 didAttemptPolish: true,
-                usedFallback: true
+                usedFallback: true,
+                polishMs: nil,
+                contextDetected: nil
             )
         }
     }

@@ -1,8 +1,8 @@
 import Foundation
 import SwiftData
 
-typealias TranscriptionRecord = TranscriptionRecordSchemaV5.TranscriptionRecord
-typealias MediaFolder = TranscriptionRecordSchemaV5.MediaFolder
+typealias TranscriptionRecord = TranscriptionRecordSchemaV6.TranscriptionRecord
+typealias MediaFolder = TranscriptionRecordSchemaV6.MediaFolder
 
 extension TranscriptionRecord {
     var resolvedSourceKind: MediaSourceKind {
