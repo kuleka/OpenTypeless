@@ -39,9 +39,6 @@ final class AppCoordinator {
     let mentionRewriteService: MentionRewriteService
     let engineProcessManager: EngineProcessManager
     let mediaPauseService: MediaPauseService
-    let mediaIngestionService: MediaIngestionService
-    let mediaPreparationService: MediaPreparationService
-    let mediaTranscriptionState: MediaTranscriptionFeatureState
 
     // MARK: - UI Controllers
     
@@ -55,7 +52,6 @@ final class AppCoordinator {
     let mainWindowController: MainWindowController
     let toastWindowController: ToastWindowController
     
-    private var mediaTranscriptionTask: Task<Void, Never>?
 
     // MARK: - State
 
@@ -189,9 +185,6 @@ final class AppCoordinator {
         self.toastService = ToastService(presenter: toastPresenter ?? resolvedToastWindowController)
         self.mentionRewriteService = MentionRewriteService()
         self.mediaPauseService = MediaPauseService()
-        self.mediaIngestionService = MediaIngestionService()
-        self.mediaPreparationService = MediaPreparationService()
-        self.mediaTranscriptionState = MediaTranscriptionFeatureState()
 
         self.statusBarController = StatusBarController(
             audioRecorder: audioRecorder,
@@ -250,19 +243,9 @@ final class AppCoordinator {
             engineRuntimeCoordinator: self.engineRuntimeCoordinator
         )
         self.mainWindowController.setModelContainer(modelContainer)
-        self.mainWindowController.configureTranscribeFeature(
-            state: mediaTranscriptionState,
+        self.mainWindowController.configure(
             modelManager: modelManager,
-            settingsStore: settingsStore,
-            onImportMediaFiles: { [weak self] urls in
-                self?.handleImportMediaFiles(urls)
-            },
-            onSubmitMediaLink: { [weak self] link in
-                self?.handleSubmitMediaLink(link)
-            },
-            onDownloadDiarizationModel: { [weak self] in
-                self?.handleDownloadDiarizationModel()
-            }
+            settingsStore: settingsStore
         )
 
         self.statusBarController.onToggleRecording = { [weak self] in
@@ -470,15 +453,6 @@ final class AppCoordinator {
         self.recordingCoordinator.onEnsureGlobalKeyMonitors = { [weak self] in
             self?.ensureGlobalKeyMonitorsIfPossible()
         }
-        self.recordingCoordinator.onCancelMediaTranscription = { [weak self] in
-            guard let self else { return }
-            self.mediaTranscriptionTask?.cancel()
-            self.mediaTranscriptionTask = nil
-            self.mediaTranscriptionState.showLibrary()
-            self.mediaTranscriptionState.libraryMessage = "Transcription canceled."
-            self.mediaTranscriptionState.clearCurrentJob()
-        }
-
         self.lastObservedSettingsSnapshot = currentSettingsObservationSnapshot()
         if self.enableSystemHooks {
             hotkeyCoordinator.setupHotkeys()
@@ -960,180 +934,6 @@ final class AppCoordinator {
             }
         } catch {
             Log.app.error("Failed to fetch transcript for export: \(error)")
-        }
-    }
-
-    // MARK: - Media Transcription
-
-    private func handleImportMediaFiles(_ urls: [URL]) {
-        guard let firstURL = urls.first else { return }
-        startMediaTranscriptionTask(from: .file(firstURL))
-    }
-
-    private func handleSubmitMediaLink(_ link: String) {
-        startMediaTranscriptionTask(from: .link(link))
-    }
-
-    private func handleDownloadDiarizationModel() {
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                try await self.modelManager.downloadFeatureModel(.diarization)
-                self.mediaTranscriptionState.setupIssue = nil
-                self.mediaTranscriptionState.libraryMessage = "Speaker diarization is ready."
-            } catch {
-                self.mediaTranscriptionState.setSetupIssue(error.localizedDescription)
-            }
-        }
-    }
-
-    private func startMediaTranscriptionTask(from request: MediaTranscriptionRequest) {
-        guard mediaTranscriptionTask == nil else {
-            mediaTranscriptionState.libraryMessage = "Another transcription is already in progress."
-            return
-        }
-
-        mediaTranscriptionTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            await self.performMediaTranscription(request)
-            self.mediaTranscriptionTask = nil
-        }
-    }
-
-    private func performMediaTranscription(_ request: MediaTranscriptionRequest) async {
-        guard !recordingCoordinator.isRecording && !recordingCoordinator.isProcessing else {
-            mediaTranscriptionState.libraryMessage = "Finish the active transcription before starting another one."
-            return
-        }
-
-        await modelManager.refreshDownloadedFeatureModels()
-        guard modelManager.isFeatureModelDownloaded(.diarization) else {
-            mediaTranscriptionState.setSetupIssue("Download the speaker diarization model before starting media transcription.")
-            return
-        }
-
-        let job = MediaTranscriptionJobState(
-            request: request,
-            destinationFolderID: mediaTranscriptionState.selectedFolderID,
-            stage: request.sourceKind == .webLink ? .preflight : .importing,
-            progress: nil,
-            detail: request.sourceKind == .webLink ? "Checking yt-dlp and ffmpeg" : "Importing local media"
-        )
-
-        mediaTranscriptionState.beginJob(job)
-        mainWindowController.showTranscribe()
-
-        recordingCoordinator.isProcessing = true
-        statusBarController.setProcessingState()
-        statusBarController.updateMenuState()
-        floatingIndicatorCoordinator.startProcessingIndicatorSession()
-
-        var didResetProcessingState = false
-
-        defer {
-            if !didResetProcessingState {
-                recordingCoordinator.resetProcessingState()
-            }
-        }
-
-        do {
-            let managedAsset = try await mediaIngestionService.ingest(
-                request: request,
-                jobID: job.id,
-                progressHandler: { [weak self] progress, detail in
-                    guard let self else { return }
-                    let stage: MediaTranscriptionStage = request.sourceKind == .webLink ? .downloading : .importing
-                    self.mediaTranscriptionState.updateJob(
-                        stage: stage,
-                        progress: progress,
-                        detail: detail,
-                        errorMessage: nil
-                    )
-                }
-            )
-
-            try Task.checkCancellation()
-
-            mediaTranscriptionState.updateJob(
-                stage: .preparingAudio,
-                progress: nil,
-                detail: "Preparing audio for transcription",
-                errorMessage: nil
-            )
-            let preparedAudio = try await mediaPreparationService.prepareAudio(from: managedAsset.mediaURL)
-
-            try Task.checkCancellation()
-
-            mediaTranscriptionState.updateJob(
-                stage: .transcribing,
-                progress: nil,
-                detail: "Running diarization and transcription",
-                errorMessage: nil
-            )
-
-            let transcriptionOutput = try await transcriptionService.transcribe(
-                audioData: preparedAudio.audioData,
-                diarizationEnabled: true,
-                options: TranscriptionOptions(language: .automatic)
-            )
-            let diarizationSegmentsJSON = recordingCoordinator.encodeDiarizationSegmentsJSON(transcriptionOutput.diarizedSegments)
-
-            try Task.checkCancellation()
-
-            mediaTranscriptionState.updateJob(
-                stage: .saving,
-                progress: nil,
-                detail: "Saving transcript to history",
-                errorMessage: nil
-            )
-
-            let finalText = RecordingCoordinator.normalizedTranscriptionText(transcriptionOutput.text)
-            guard !RecordingCoordinator.isTranscriptionEffectivelyEmpty(finalText) else {
-                throw MediaPreparationError.readFailed("No speech could be transcribed from this media.")
-            }
-
-            let record = try historyStore.save(
-                text: finalText,
-                originalText: nil,
-                duration: preparedAudio.duration,
-                modelUsed: settingsStore.selectedModel,
-                enhancedWith: nil,
-                diarizationSegmentsJSON: diarizationSegmentsJSON,
-                sourceKind: managedAsset.sourceKind,
-                sourceDisplayName: managedAsset.displayName,
-                originalSourceURL: managedAsset.originalSourceURL,
-                managedMediaPath: managedAsset.mediaURL.path,
-                thumbnailPath: managedAsset.thumbnailURL?.path,
-                folderID: job.destinationFolderID
-            )
-            updateRecentTranscriptsMenu()
-
-            let shouldNavigateToDetail = mediaTranscriptionState.route == .processing(job.id)
-            recordingCoordinator.resetProcessingState()
-            didResetProcessingState = true
-            mediaTranscriptionState.completeCurrentJob(with: record.id, shouldNavigateToDetail: shouldNavigateToDetail)
-        } catch is CancellationError {
-            recordingCoordinator.resetProcessingState()
-            didResetProcessingState = true
-            mediaTranscriptionState.showLibrary()
-            mediaTranscriptionState.libraryMessage = "Transcription canceled."
-            mediaTranscriptionState.clearCurrentJob()
-        } catch let error as MediaIngestionError {
-            Log.app.error("Media ingestion failed: \(error.localizedDescription)")
-            recordingCoordinator.resetProcessingState()
-            didResetProcessingState = true
-            mediaTranscriptionState.clearCurrentJob()
-            if case .toolingUnavailable(let message) = error {
-                mediaTranscriptionState.setSetupIssue(message)
-            } else {
-                mediaTranscriptionState.libraryMessage = error.localizedDescription
-            }
-        } catch {
-            Log.app.error("Media transcription failed: \(error)")
-            recordingCoordinator.resetProcessingState()
-            didResetProcessingState = true
-            let shouldReturnToLibrary = mediaTranscriptionState.route != .processing(job.id)
-            mediaTranscriptionState.failCurrentJob(error.localizedDescription, returnToLibrary: shouldReturnToLibrary)
         }
     }
 

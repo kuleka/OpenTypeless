@@ -23,7 +23,6 @@ struct HistoryStoreTests {
     private func makeFixture() throws -> Fixture {
         let modelContainer = try ModelContainer(
             for: TranscriptionRecord.self,
-            MediaFolder.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
         let modelContext = ModelContext(modelContainer)
@@ -65,7 +64,6 @@ struct HistoryStoreTests {
 
         let migratedContainer = try ModelContainer(
             for: TranscriptionRecord.self,
-            MediaFolder.self,
             configurations: configuration
         )
         let migratedContext = ModelContext(migratedContainer)
@@ -73,8 +71,6 @@ struct HistoryStoreTests {
 
         #expect(records.count == 1)
         #expect(records.first?.text == "Legacy transcription")
-        #expect(records.first?.resolvedSourceKind == .voiceRecording)
-        #expect(records.first?.managedMediaPath == nil)
 
         try? FileManager.default.removeItem(at: directoryURL)
     }
@@ -108,7 +104,6 @@ struct HistoryStoreTests {
 
         let migratedContainer = try ModelContainer(
             for: TranscriptionRecord.self,
-            MediaFolder.self,
             configurations: configuration
         )
         let migratedContext = ModelContext(migratedContainer)
@@ -169,50 +164,6 @@ struct HistoryStoreTests {
         #expect(records.first?.diarizationSegmentsJSON == nil)
     }
 
-    @Test func saveMediaTranscriptionPersistsMediaMetadata() throws {
-        let fixture = try makeFixture()
-
-        let record = try fixture.historyStore.save(
-            text: "Transcript",
-            duration: 12.5,
-            modelUsed: "base",
-            sourceKind: .webLink,
-            sourceDisplayName: "Example Video",
-            originalSourceURL: "https://example.com/watch?v=123",
-            managedMediaPath: "/tmp/example-video.mp4",
-            thumbnailPath: "/tmp/example-video.png"
-        )
-
-        let records = try fixture.historyStore.fetchAll()
-        #expect(records.count == 1)
-        #expect(records.first?.id == record.id)
-        #expect(records.first?.resolvedSourceKind == .webLink)
-        #expect(records.first?.sourceDisplayName == "Example Video")
-        #expect(records.first?.originalSourceURL == "https://example.com/watch?v=123")
-        #expect(records.first?.managedMediaPath == "/tmp/example-video.mp4")
-        #expect(records.first?.thumbnailPath == "/tmp/example-video.png")
-        #expect(records.first?.isMediaTranscription == true)
-    }
-
-    @Test func saveMediaTranscriptionPersistsSelectedFolder() throws {
-        let fixture = try makeFixture()
-        let folder = try fixture.historyStore.createFolder(named: "Interviews")
-        let record = try fixture.historyStore.save(
-            text: "Transcript",
-            duration: 12.5,
-            modelUsed: "base",
-            sourceKind: .webLink,
-            sourceDisplayName: "Example Video",
-            originalSourceURL: "https://example.com/watch?v=123",
-            managedMediaPath: "/tmp/example-video.mp4",
-            folderID: folder.id
-        )
-
-        #expect(record.folder?.id == folder.id)
-        let fetchedRecords = try fixture.historyStore.fetchAll()
-        #expect(fetchedRecords.first?.folder?.name == "Interviews")
-    }
-    
     @Test func fetchTranscriptions() throws {
         let fixture = try makeFixture()
         try fixture.historyStore.save(text: "First", duration: 1.0, modelUsed: "tiny")
@@ -231,47 +182,6 @@ struct HistoryStoreTests {
         #expect(limitedRecords[1].text == "Second")
     }
 
-    @Test func fetchVoiceTranscriptionsSupportsOffsetPagination() throws {
-        let fixture = try makeFixture()
-        try fixture.historyStore.save(text: "First voice", duration: 1.0, modelUsed: "tiny")
-        try fixture.historyStore.save(text: "Second voice", duration: 2.0, modelUsed: "base")
-        try fixture.historyStore.save(
-            text: "Media item",
-            duration: 3.0,
-            modelUsed: "small",
-            sourceKind: .webLink,
-            sourceDisplayName: "Example media",
-            managedMediaPath: "/tmp/example.mp4"
-        )
-        try fixture.historyStore.save(text: "Third voice", duration: 4.0, modelUsed: "large")
-
-        let firstPage = try fixture.historyStore.fetchVoiceTranscriptions(limit: 2)
-        let secondPage = try fixture.historyStore.fetchVoiceTranscriptions(limit: 2, offset: 2)
-
-        #expect(firstPage.map(\.text) == ["Third voice", "Second voice"])
-        #expect(secondPage.map(\.text) == ["First voice"])
-        #expect((firstPage + secondPage).allSatisfy { $0.isVoiceTranscription })
-    }
-
-    @Test func countVoiceTranscriptionsRespectsSearchQuery() throws {
-        let fixture = try makeFixture()
-        try fixture.historyStore.save(text: "Alpha voice", duration: 1.0, modelUsed: "tiny")
-        try fixture.historyStore.save(text: "Beta voice", duration: 2.0, modelUsed: "base")
-        try fixture.historyStore.save(
-            text: "Alpha media",
-            duration: 3.0,
-            modelUsed: "small",
-            sourceKind: .importedFile,
-            sourceDisplayName: "alpha.mov",
-            managedMediaPath: "/tmp/alpha.mov"
-        )
-
-        #expect(try fixture.historyStore.countVoiceTranscriptions() == 2)
-        #expect(try fixture.historyStore.countVoiceTranscriptions(query: "Alpha") == 1)
-        #expect(try fixture.historyStore.countVoiceTranscriptions(query: "Beta") == 1)
-        #expect(try fixture.historyStore.countVoiceTranscriptions(query: "media") == 0)
-    }
-    
     @Test func searchTranscriptions() throws {
         let fixture = try makeFixture()
         try fixture.historyStore.save(text: "The quick brown fox", duration: 1.0, modelUsed: "tiny")
@@ -289,66 +199,6 @@ struct HistoryStoreTests {
         #expect(noResults.count == 0)
     }
 
-    @Test func fetchMediaRecordsOnlyReturnsMediaBackedTranscriptions() throws {
-        let fixture = try makeFixture()
-        try fixture.historyStore.save(text: "Voice", duration: 1.0, modelUsed: "tiny")
-        try fixture.historyStore.save(
-            text: "Linked media",
-            duration: 2.0,
-            modelUsed: "base",
-            sourceKind: .webLink,
-            sourceDisplayName: "Linked media",
-            originalSourceURL: "https://example.com/video",
-            managedMediaPath: "/tmp/linked.mp4"
-        )
-        try fixture.historyStore.save(
-            text: "Imported file",
-            duration: 3.0,
-            modelUsed: "small",
-            sourceKind: .importedFile,
-            sourceDisplayName: "clip.mov",
-            managedMediaPath: "/tmp/clip.mov"
-        )
-
-        let records = try fixture.historyStore.fetchMediaRecords()
-        #expect(records.count == 2)
-        #expect(records.allSatisfy { $0.isMediaTranscription })
-        #expect(records.map(\.resolvedSourceKind) == [.importedFile, .webLink])
-    }
-
-    @Test func voiceAndMediaClassificationMatchesSourceKind() throws {
-        let fixture = try makeFixture()
-        try fixture.historyStore.save(text: "Voice", duration: 1.0, modelUsed: "tiny")
-        try fixture.historyStore.save(
-            text: "Linked media",
-            duration: 2.0,
-            modelUsed: "base",
-            sourceKind: .webLink,
-            sourceDisplayName: "Linked media",
-            originalSourceURL: "https://example.com/video",
-            managedMediaPath: "/tmp/linked.mp4"
-        )
-        try fixture.historyStore.save(
-            text: "Imported file",
-            duration: 3.0,
-            modelUsed: "small",
-            sourceKind: .importedFile,
-            sourceDisplayName: "clip.mov",
-            managedMediaPath: "/tmp/clip.mov"
-        )
-
-        let records = try fixture.historyStore.fetchAll()
-        #expect(records.count == 3)
-
-        let recordsByText = Dictionary(uniqueKeysWithValues: records.map { ($0.text, $0) })
-        #expect(recordsByText["Voice"]?.isVoiceTranscription == true)
-        #expect(recordsByText["Voice"]?.isMediaTranscription == false)
-        #expect(recordsByText["Linked media"]?.isVoiceTranscription == false)
-        #expect(recordsByText["Linked media"]?.isMediaTranscription == true)
-        #expect(recordsByText["Imported file"]?.isVoiceTranscription == false)
-        #expect(recordsByText["Imported file"]?.isMediaTranscription == true)
-    }
-    
     @Test func deleteTranscription() throws {
         let fixture = try makeFixture()
         try fixture.historyStore.save(text: "To be deleted", duration: 1.0, modelUsed: "tiny")
@@ -380,36 +230,6 @@ struct HistoryStoreTests {
         #expect(records.count == 0)
     }
 
-    @Test func deleteRemovesManagedMediaAssets() throws {
-        let fixture = try makeFixture()
-        let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
-
-        let mediaURL = tempDirectory.appendingPathComponent("media.mp4")
-        let thumbnailURL = tempDirectory.appendingPathComponent("thumbnail.png")
-        try Data("media".utf8).write(to: mediaURL)
-        try Data("thumb".utf8).write(to: thumbnailURL)
-
-        let record = try fixture.historyStore.save(
-            text: "Media",
-            duration: 8.0,
-            modelUsed: "base",
-            sourceKind: .importedFile,
-            sourceDisplayName: "media.mp4",
-            managedMediaPath: mediaURL.path,
-            thumbnailPath: thumbnailURL.path
-        )
-
-        #expect(FileManager.default.fileExists(atPath: mediaURL.path))
-        #expect(FileManager.default.fileExists(atPath: thumbnailURL.path))
-
-        try fixture.historyStore.delete(record)
-
-        #expect(FileManager.default.fileExists(atPath: mediaURL.path) == false)
-        #expect(FileManager.default.fileExists(atPath: thumbnailURL.path) == false)
-        #expect(FileManager.default.fileExists(atPath: tempDirectory.path) == false)
-    }
-    
     @Test func timestampOrdering() async throws {
         let fixture = try makeFixture()
         try fixture.historyStore.save(text: "First", duration: 1.0, modelUsed: "tiny")
@@ -449,138 +269,6 @@ struct HistoryStoreTests {
         #expect(mixedResults.count == 1)
     }
 
-    @Test func createRenameAndFetchFolders() throws {
-        let fixture = try makeFixture()
-        let folder = try fixture.historyStore.createFolder(named: " Interviews ")
-        #expect(folder.name == "Interviews")
-
-        try fixture.historyStore.renameFolder(folder, to: "Customer Interviews")
-
-        let folders = try fixture.historyStore.fetchFolders()
-        #expect(folders.map(\.name) == ["Customer Interviews"])
-    }
-
-    @Test func createFolderRejectsDuplicateNamesCaseInsensitively() throws {
-        let fixture = try makeFixture()
-        _ = try fixture.historyStore.createFolder(named: "Interviews")
-
-        do {
-            _ = try fixture.historyStore.createFolder(named: "interviews")
-            Issue.record("Expected duplicate-name HistoryStoreError")
-        } catch let historyError as HistoryStore.HistoryStoreError {
-            if case .saveFailed(let message) = historyError {
-                #expect(message.contains("already exists"))
-            } else {
-                Issue.record("Expected saveFailed duplicate-name error, got \(historyError)")
-            }
-        } catch {
-            Issue.record("Expected HistoryStoreError, got \(error)")
-        }
-    }
-
-    @Test func deleteFolderUnassignsTranscriptionsInsteadOfDeletingThem() throws {
-        let fixture = try makeFixture()
-        let folder = try fixture.historyStore.createFolder(named: "Interviews")
-        let record = try fixture.historyStore.save(
-            text: "Transcript",
-            duration: 5.0,
-            modelUsed: "base",
-            sourceKind: .webLink,
-            sourceDisplayName: "Interview",
-            managedMediaPath: "/tmp/interview.mp4",
-            folderID: folder.id
-        )
-
-        try fixture.historyStore.deleteFolder(folder)
-
-        let folders = try fixture.historyStore.fetchFolders()
-        let records = try fixture.historyStore.fetchAll()
-
-        #expect(folders.isEmpty)
-        #expect(records.count == 1)
-        #expect(records.first?.id == record.id)
-        #expect(records.first?.folder == nil)
-    }
-
-    @Test func assignAndRemoveTranscriptionFolder() throws {
-        let fixture = try makeFixture()
-        let folder = try fixture.historyStore.createFolder(named: "Research")
-        let record = try fixture.historyStore.save(
-            text: "Transcript",
-            duration: 5.0,
-            modelUsed: "base",
-            sourceKind: .webLink,
-            sourceDisplayName: "Research Call",
-            managedMediaPath: "/tmp/research.mp4"
-        )
-
-        try fixture.historyStore.assign(record: record, to: folder)
-        #expect(record.folder?.id == folder.id)
-
-        try fixture.historyStore.removeFromFolder(record: record)
-        #expect(record.folder == nil)
-    }
-
-    @Test func fetchMediaLibrarySearchesTranscriptAndMetadata() throws {
-        let fixture = try makeFixture()
-        let folder = try fixture.historyStore.createFolder(named: "Research")
-        try fixture.historyStore.save(
-            text: "The product team discussed roadmap risks.",
-            originalText: "roadmap risks",
-            duration: 5.0,
-            modelUsed: "base",
-            sourceKind: .webLink,
-            sourceDisplayName: "Quarterly Research",
-            originalSourceURL: "https://example.com/research",
-            managedMediaPath: "/tmp/research.mp4",
-            folderID: folder.id
-        )
-        try fixture.historyStore.save(
-            text: "Another transcript",
-            duration: 2.0,
-            modelUsed: "base",
-            sourceKind: .importedFile,
-            sourceDisplayName: "Design Review",
-            managedMediaPath: "/tmp/design.mov"
-        )
-
-        #expect(try fixture.historyStore.fetchMediaLibrary(query: "roadmap").count == 1)
-        #expect(try fixture.historyStore.fetchMediaLibrary(query: "Quarterly").count == 1)
-        #expect(try fixture.historyStore.fetchMediaLibrary(query: "example.com/research").count == 1)
-        #expect(try fixture.historyStore.fetchMediaLibrary(folderID: folder.id, query: "roadmap").count == 1)
-        #expect(try fixture.historyStore.fetchMediaLibrary(folderID: folder.id, query: "Design").isEmpty)
-    }
-
-    @Test func fetchMediaLibrarySortsByNameAndDate() throws {
-        let fixture = try makeFixture()
-        try fixture.historyStore.save(
-            text: "Zulu",
-            duration: 1.0,
-            modelUsed: "base",
-            sourceKind: .webLink,
-            sourceDisplayName: "Zulu Call",
-            managedMediaPath: "/tmp/zulu.mp4"
-        )
-        try fixture.historyStore.save(
-            text: "Alpha",
-            duration: 1.0,
-            modelUsed: "base",
-            sourceKind: .webLink,
-            sourceDisplayName: "Alpha Call",
-            managedMediaPath: "/tmp/alpha.mp4"
-        )
-
-        let newest = try fixture.historyStore.fetchMediaLibrary(sort: .newest)
-        let oldest = try fixture.historyStore.fetchMediaLibrary(sort: .oldest)
-        let ascending = try fixture.historyStore.fetchMediaLibrary(sort: .nameAscending)
-        let descending = try fixture.historyStore.fetchMediaLibrary(sort: .nameDescending)
-
-        #expect(newest.first?.sourceDisplayName == "Alpha Call")
-        #expect(oldest.first?.sourceDisplayName == "Zulu Call")
-        #expect(ascending.map(\.sourceDisplayName) == ["Alpha Call", "Zulu Call"])
-        #expect(descending.map(\.sourceDisplayName) == ["Zulu Call", "Alpha Call"])
-    }
-    
     // MARK: - Export Tests
     
     @Test func exportToJSON() throws {
@@ -713,7 +401,6 @@ struct HistoryStoreTests {
 
         #expect(records.count == 1)
         #expect(records.first?.text == "Legacy transcription")
-        #expect(records.first?.resolvedSourceKind == .voiceRecording)
 
         try? FileManager.default.removeItem(at: brokenStoreURL.deletingLastPathComponent())
         try? FileManager.default.removeItem(at: referenceStoreURL.deletingLastPathComponent())
@@ -1040,7 +727,6 @@ struct HistoryStoreTests {
         let configuration = ModelConfiguration(url: storeURL)
         return try ModelContainer(
             for: TranscriptionRecord.self,
-            MediaFolder.self,
             configurations: configuration
         )
     }

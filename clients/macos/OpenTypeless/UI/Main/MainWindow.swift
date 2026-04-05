@@ -14,14 +14,12 @@ import AppKit
 enum MainNavItem: String, Identifiable {
     case home = "Home"
     case history = "History"
-    case transcribe = "Transcribe"
     case models = "Models"
     case settings = "Settings"
 
     static let primaryNavigationItems: [MainNavItem] = [
         .home,
         .history,
-        .transcribe,
         .models,
         .settings
     ]
@@ -36,7 +34,6 @@ enum MainNavItem: String, Identifiable {
         switch self {
         case .home: return "house.fill"
         case .history: return "clock.fill"
-        case .transcribe: return "waveform"
         case .models: return "cpu"
         case .settings: return "gearshape"
         }
@@ -107,17 +104,9 @@ struct MainWindow: View {
     @ObservedObject var settingsStore: SettingsStore
     @State private var selectedNav: MainNavItem = .home
     @State private var selectedSettingsTab: SettingsTab = .general
-    let mediaTranscriptionState: MediaTranscriptionFeatureState?
     let modelManager: ModelManager?
-    let onImportMediaFiles: (([URL]) -> Void)?
-    let onSubmitMediaLink: ((String) -> Void)?
-    let onDownloadDiarizationModel: (() -> Void)?
 
     private func navigateTo(_ item: MainNavItem) {
-        if item == .transcribe {
-            mediaTranscriptionState?.showLibrary()
-        }
-
         selectedNav = item
     }
 
@@ -202,24 +191,6 @@ struct MainWindow: View {
             )
         case .history:
             HistoryView()
-        case .transcribe:
-            if let mediaTranscriptionState,
-               let modelManager,
-               let onImportMediaFiles,
-               let onSubmitMediaLink,
-               let onDownloadDiarizationModel {
-                TranscribeView(
-                    featureState: mediaTranscriptionState,
-                    modelManager: modelManager,
-                    settingsStore: settingsStore,
-                    onImportFiles: onImportMediaFiles,
-                    onSubmitLink: onSubmitMediaLink,
-                    onDownloadDiarizationModel: onDownloadDiarizationModel,
-                    onOpenModels: { navigateTo(.models) }
-                )
-            } else {
-                comingSoonView(for: selectedNav)
-            }
         case .models:
             if let modelManager {
                 ModelsSettingsView(settings: settingsStore, modelManager: modelManager)
@@ -370,31 +341,19 @@ final class MainWindowController {
 
     private var window: NSWindow?
     private var modelContainer: ModelContainer?
-    private var mediaTranscriptionState: MediaTranscriptionFeatureState?
     private var modelManager: ModelManager?
     private var settingsStore: SettingsStore?
-    var onImportMediaFiles: (([URL]) -> Void)?
-    var onSubmitMediaLink: ((String) -> Void)?
-    var onDownloadDiarizationModel: (() -> Void)?
 
     func setModelContainer(_ container: ModelContainer) {
         self.modelContainer = container
     }
 
-    func configureTranscribeFeature(
-        state: MediaTranscriptionFeatureState,
+    func configure(
         modelManager: ModelManager,
-        settingsStore: SettingsStore,
-        onImportMediaFiles: @escaping ([URL]) -> Void,
-        onSubmitMediaLink: @escaping (String) -> Void,
-        onDownloadDiarizationModel: @escaping () -> Void
+        settingsStore: SettingsStore
     ) {
-        self.mediaTranscriptionState = state
         self.modelManager = modelManager
         self.settingsStore = settingsStore
-        self.onImportMediaFiles = onImportMediaFiles
-        self.onSubmitMediaLink = onSubmitMediaLink
-        self.onDownloadDiarizationModel = onDownloadDiarizationModel
     }
 
     func show() {
@@ -403,10 +362,6 @@ final class MainWindowController {
 
     func showHistory() {
         show(navigationItem: .history)
-    }
-
-    func showTranscribe() {
-        show(navigationItem: .transcribe)
     }
 
     func showModels() {
@@ -430,11 +385,7 @@ final class MainWindowController {
         if window == nil {
             let mainView = MainWindow(
                 settingsStore: settingsStore,
-                mediaTranscriptionState: mediaTranscriptionState,
-                modelManager: modelManager,
-                onImportMediaFiles: onImportMediaFiles,
-                onSubmitMediaLink: onSubmitMediaLink,
-                onDownloadDiarizationModel: onDownloadDiarizationModel
+                modelManager: modelManager
             )
                 .modelContainer(container)
             let hostingController = TitlebarlessHostingController(rootView: mainView)
@@ -546,11 +497,7 @@ private final class MainWindowCloseDelegate: NSObject, NSWindowDelegate {
 #Preview("Main Window - Light") {
     MainWindow(
         settingsStore: SettingsStore(),
-        mediaTranscriptionState: nil,
-        modelManager: nil,
-        onImportMediaFiles: nil,
-        onSubmitMediaLink: nil,
-        onDownloadDiarizationModel: nil
+        modelManager: nil
     )
         .modelContainer(PreviewContainer.empty)
         .preferredColorScheme(.light)
@@ -560,11 +507,7 @@ private final class MainWindowCloseDelegate: NSObject, NSWindowDelegate {
 #Preview("Main Window - Dark") {
     MainWindow(
         settingsStore: SettingsStore(),
-        mediaTranscriptionState: nil,
-        modelManager: nil,
-        onImportMediaFiles: nil,
-        onSubmitMediaLink: nil,
-        onDownloadDiarizationModel: nil
+        modelManager: nil
     )
         .modelContainer(PreviewContainer.empty)
         .preferredColorScheme(.dark)

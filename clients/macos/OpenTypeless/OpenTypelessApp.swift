@@ -235,7 +235,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let configuration = ModelConfiguration(url: storeRepairService.storeURL())
         return try ModelContainer(
             for: TranscriptionRecord.self,
-            MediaFolder.self,
             configurations: configuration
         )
     }

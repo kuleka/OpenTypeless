@@ -9,6 +9,17 @@
 import Foundation
 import SwiftData
 
+/// Legacy type retained for schema compatibility. No longer used at runtime.
+enum MediaSourceKind: String, Codable {
+    case voiceRecording
+    case importedFile
+    case webLink
+
+    var isMediaBacked: Bool {
+        self != .voiceRecording
+    }
+}
+
 enum TranscriptionRecordSchema: VersionedSchema {
     static var versionIdentifier = Schema.Version(1, 0, 5)
     

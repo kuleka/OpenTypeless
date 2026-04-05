@@ -56,7 +56,6 @@ final class RecordingCoordinator {
     var onUpdateRecentTranscriptsMenu: () -> Void = {}
     var onEnsureAccessibilityForDirectInsert: (_ trigger: String, _ showFallbackAlert: Bool) -> Void = { _, _ in }
     var onEnsureGlobalKeyMonitors: () -> Void = {}
-    var onCancelMediaTranscription: () -> Void = {}
 
     // MARK: - Init
 
@@ -291,7 +290,6 @@ final class RecordingCoordinator {
         let hadStreamingSession = isStreamingTranscriptionSessionActive
         clearStreamingSessionBindings(cancelPendingWork: true)
         isStreamingTranscriptionSessionActive = false
-        onCancelMediaTranscription()
         if hadStreamingSession {
             Task { @MainActor [weak self] in
                 guard let self else { return }
