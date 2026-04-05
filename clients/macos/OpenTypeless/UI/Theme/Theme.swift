@@ -19,7 +19,12 @@ final class OpenTypelessThemeController: ObservableObject {
     }
 
     func refresh() {
+        let keyWindow = NSApp.keyWindow
         applyAppAppearance()
+        for window in NSApp.windows {
+            apply(to: window)
+        }
+        keyWindow?.makeKeyAndOrderFront(nil)
         revision &+= 1
     }
 

@@ -55,6 +55,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var modelContainer: ModelContainer?
     private let storeRepairService = SwiftDataStoreRepairService()
 
+    private var lastShowInDock: Bool = false
+    private var lastLanguageRaw: String = ""
+
     private var currentLocale: Locale {
         settingsStore?.selectedAppLanguage.locale ?? .autoupdatingCurrent
     }
@@ -123,9 +126,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Log.boot.info("AppCoordinator ready hasCompletedOnboarding=\(onboardingDone) elapsed=\(String(format: "%.2fs", CFAbsoluteTimeGetCurrent() - bootStarted))")
         OpenTypelessThemeController.shared.refresh()
 
+        lastShowInDock = UserDefaults.standard.bool(forKey: "showInDock")
+        lastLanguageRaw = UserDefaults.standard.string(forKey: "selectedLanguage") ?? ""
         updateDockVisibility()
         setupMainMenu()
-        
+
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(settingsDidChange),
@@ -173,22 +178,53 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         editMenu.addItem(NSMenuItem(title: localized("Select All", locale: currentLocale), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
         
         mainMenu.addItem(editMenuItem)
-        
+
+        // Window menu (Cmd+W to close)
+        let windowMenu = NSMenu(title: localized("Window", locale: currentLocale))
+        let windowMenuItem = NSMenuItem()
+        windowMenuItem.submenu = windowMenu
+        windowMenu.addItem(NSMenuItem(title: localized("Close Window", locale: currentLocale), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"))
+        windowMenu.addItem(NSMenuItem(title: localized("Minimize", locale: currentLocale), action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m"))
+        mainMenu.addItem(windowMenuItem)
+
         NSApplication.shared.mainMenu = mainMenu
     }
     
     @objc private func settingsDidChange() {
-        updateDockVisibility()
-        setupMainMenu()
+        let currentShowInDock = UserDefaults.standard.bool(forKey: "showInDock")
+        if currentShowInDock != lastShowInDock {
+            lastShowInDock = currentShowInDock
+            updateDockVisibility()
+        }
+
+        let currentLang = UserDefaults.standard.string(forKey: "selectedLanguage") ?? ""
+        if currentLang != lastLanguageRaw {
+            lastLanguageRaw = currentLang
+            setupMainMenu()
+        }
     }
-    
+
     private func updateDockVisibility() {
         guard !Self.isPreview else { return }
-        let showInDock = UserDefaults.standard.bool(forKey: "showInDock")
-        let policy: NSApplication.ActivationPolicy = showInDock ? .regular : .accessory
-        NSApplication.shared.setActivationPolicy(policy)
+        if lastShowInDock {
+            NSApplication.shared.setActivationPolicy(.regular)
+        } else {
+            // When toggled off while a window is open, the window's close handler
+            // will switch to .accessory when the user eventually closes it.
+            // If no main window is open right now, switch immediately.
+            if coordinator?.mainWindowController.isVisible != true {
+                NSApplication.shared.setActivationPolicy(.accessory)
+            }
+        }
     }
     
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if coordinator?.mainWindowController.isVisible != true {
+            coordinator?.mainWindowController.show()
+        }
+        return true
+    }
+
     @objc func openSettings(_ sender: Any?) {
         Task { @MainActor in
             coordinator?.statusBarController.showSettings()

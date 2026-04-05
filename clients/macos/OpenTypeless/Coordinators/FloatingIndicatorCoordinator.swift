@@ -80,8 +80,6 @@ final class FloatingIndicatorCoordinator {
             .pillIndicatorStart
         case .notch:
             .floatingIndicatorStart
-        case .bubble:
-            .bubbleIndicatorStart
         }
     }
 
@@ -91,8 +89,6 @@ final class FloatingIndicatorCoordinator {
             .pillIndicatorStop
         case .notch:
             .floatingIndicatorStop
-        case .bubble:
-            .bubbleIndicatorStop
         }
     }
 

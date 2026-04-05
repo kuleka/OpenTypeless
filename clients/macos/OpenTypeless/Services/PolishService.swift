@@ -17,8 +17,8 @@ final class PolishService {
         let modelUsed: String?
         let usedFallback: Bool
         let warningMessage: String?
-        let llmMs: Int?
-        let totalMs: Int?
+        var llmMs: Int? = nil
+        var totalMs: Int? = nil
     }
 
     enum PolishError: Error, LocalizedError, Equatable {

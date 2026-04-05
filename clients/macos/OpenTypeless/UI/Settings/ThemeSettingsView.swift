@@ -110,13 +110,11 @@ struct ThemeSettingsView: View {
     }
 
     private func selectPreset(_ presetID: String, for variant: OpenTypelessThemeVariant) {
-        withAnimation(AppTheme.Animation.smooth) {
-            switch variant {
-            case .light:
-                settings.lightThemePresetID = presetID
-            case .dark:
-                settings.darkThemePresetID = presetID
-            }
+        switch variant {
+        case .light:
+            settings.lightThemePresetID = presetID
+        case .dark:
+            settings.darkThemePresetID = presetID
         }
     }
 }

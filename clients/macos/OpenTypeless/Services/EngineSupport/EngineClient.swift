@@ -34,10 +34,10 @@ struct HealthStatsResponse: Codable, Equatable {
 struct HealthResponse: Codable, Equatable {
     let status: String
     let version: String
-    let configured: Bool?
-    let sttConfigured: Bool?
-    let uptimeSeconds: Int?
-    let stats: HealthStatsResponse?
+    var configured: Bool? = nil
+    var sttConfigured: Bool? = nil
+    var uptimeSeconds: Int? = nil
+    var stats: HealthStatsResponse? = nil
 
     enum CodingKeys: String, CodingKey {
         case status, version, configured, stats

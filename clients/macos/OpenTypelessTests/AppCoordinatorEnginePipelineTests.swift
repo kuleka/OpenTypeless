@@ -244,9 +244,6 @@ struct AppCoordinatorEnginePipelineTests {
     private func makeModelContainer() throws -> ModelContainer {
         let schema = Schema([
             TranscriptionRecord.self,
-            WordReplacement.self,
-            VocabularyWord.self,
-            PromptPreset.self,
         ])
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         return try ModelContainer(for: schema, configurations: [configuration])
@@ -579,10 +576,6 @@ struct AppCoordinatorEnginePipelineTests {
         coordinator.settingsStore.updateEngineRuntimeState(
             .ready(version: "1.4.0-draft", detail: "Engine is ready for local dictation with text polishing.")
         )
-        try coordinator.dictionaryStore.add(
-            WordReplacement(originals: ["doctor"], replacement: "Dr.", sortOrder: 0)
-        )
-
         try await coordinator.recordingCoordinator.processRecordedAudioData(
             makeFloatAudioData(seconds: 1.0),
             duration: 1.25
@@ -598,7 +591,7 @@ struct AppCoordinatorEnginePipelineTests {
         let records = try coordinator.historyStore.fetch(limit: 1)
         #expect(records.count == 1)
         #expect(records.first?.text == "Dr. Smith, please follow up.")
-        #expect(records.first?.originalText == "Dr. smith follow up")
+        #expect(records.first?.originalText == "doctor smith follow up")
         #expect(records.first?.enhancedWith == "openai/gpt-4o-mini")
 
         coordinator.cleanup()

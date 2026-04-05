@@ -143,8 +143,6 @@ private struct FloatingIndicatorPreviewGlyph: View {
                 NotchIndicatorSelectionGlyph()
             case .pill:
                 PillIndicatorSelectionGlyph()
-            case .bubble:
-                CaretBubbleIndicatorSelectionGlyph()
             }
         }
         .frame(height: 92)
@@ -258,46 +256,6 @@ private struct PillIndicatorSelectionGlyph: View {
             .offset(y: -6)
         }
         .padding(.bottom, 10)
-    }
-}
-
-private struct CaretBubbleIndicatorSelectionGlyph: View {
-    var body: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(AppColors.overlaySurface)
-                .frame(width: 18, height: 18)
-                .overlay(
-                    Image(systemName: "xmark")
-                        .font(.system(size: 7, weight: .bold))
-                        .foregroundStyle(AppColors.overlayTextPrimary.opacity(0.92))
-                )
-
-            Capsule()
-                .fill(AppColors.overlaySurface)
-                .frame(width: 42, height: 28)
-                .overlay {
-                    HStack(spacing: 2) {
-                        ForEach(Array([4.0, 8.0, 12.0, 8.0, 5.0].enumerated()), id: \.offset) { _, height in
-                            RoundedRectangle(cornerRadius: 1)
-                                .fill(AppColors.overlayWaveform)
-                                .frame(width: 3, height: height)
-                        }
-                    }
-                }
-                .shadow(color: AppColors.shadowColor.opacity(0.16), radius: 8, y: 4)
-
-            Circle()
-                .fill(AppColors.overlayRecording)
-                .frame(width: 18, height: 18)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 1.5)
-                        .fill(AppColors.overlayTextPrimary)
-                        .frame(width: 6, height: 6)
-                )
-                .shadow(color: AppColors.overlayRecording.opacity(0.22), radius: 4)
-        }
-        .padding(.top, 6)
     }
 }
 

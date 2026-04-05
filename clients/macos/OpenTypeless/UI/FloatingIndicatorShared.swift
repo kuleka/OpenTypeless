@@ -107,7 +107,7 @@ struct FloatingIndicatorWaveformStyle {
     )
 
     static let pill = FloatingIndicatorWaveformStyle(
-        layout: .fixed(count: 5, heightScale: [0.55, 0.78, 1.0, 0.78, 0.55]),
+        layout: .dynamic(minimumCount: 5, edgeAttenuation: 0.5),
         barWidth: 2,
         barSpacing: 2,
         minimumHeight: 3,
@@ -117,16 +117,6 @@ struct FloatingIndicatorWaveformStyle {
         animationInterval: 0.05
     )
 
-    static let bubble = FloatingIndicatorWaveformStyle(
-        layout: .fixed(count: 5, heightScale: [0.55, 0.78, 1.0, 0.78, 0.55]),
-        barWidth: 3,
-        barSpacing: 2,
-        minimumHeight: 3,
-        maximumHeight: 14,
-        idleHeight: 3,
-        color: AppColors.overlayWaveform,
-        animationInterval: 0.05
-    )
 }
 
 struct FloatingIndicatorWaveformView: View {

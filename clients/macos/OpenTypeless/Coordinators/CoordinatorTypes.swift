@@ -222,8 +222,6 @@ enum RecordingTriggerSource: String {
     case floatingIndicatorStop = "floating-indicator-stop"
     case pillIndicatorStop = "pill-indicator-stop"
     case pillIndicatorStart = "pill-indicator-start"
-    case bubbleIndicatorStart = "bubble-indicator-start"
-    case bubbleIndicatorStop = "bubble-indicator-stop"
 }
 
 // MARK: - Engine Runtime Types

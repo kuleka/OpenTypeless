@@ -49,7 +49,6 @@ final class AppCoordinator {
     let floatingIndicatorState: FloatingIndicatorState
     let floatingIndicatorController: FloatingIndicatorController
     let pillFloatingIndicatorController: PillFloatingIndicatorController
-    let caretBubbleFloatingIndicatorController: CaretBubbleFloatingIndicatorController
     let floatingIndicatorPresenters: [FloatingIndicatorType: any FloatingIndicatorPresenting]
     let onboardingController: OnboardingWindowController
     let splashController: SplashWindowController
@@ -204,11 +203,9 @@ final class AppCoordinator {
             state: floatingIndicatorState,
             settingsStore: settingsStore
         )
-        self.caretBubbleFloatingIndicatorController = CaretBubbleFloatingIndicatorController(state: floatingIndicatorState)
         self.floatingIndicatorPresenters = [
             .notch: floatingIndicatorController,
-            .pill: pillFloatingIndicatorController,
-            .bubble: caretBubbleFloatingIndicatorController
+            .pill: pillFloatingIndicatorController
         ]
         self.onboardingController = OnboardingWindowController()
         let splashState = SplashScreenState()

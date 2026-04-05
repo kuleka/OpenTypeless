@@ -89,10 +89,9 @@ final class OnboardingWindowController {
         window = nil
         hostingController = nil
 
-        let hasVisibleWindows = NSApp.windows.contains { $0.isVisible && !$0.className.contains("StatusBar") }
-        if !hasVisibleWindows {
-            let showInDock = UserDefaults.standard.bool(forKey: "showInDock")
-            NSApp.setActivationPolicy(showInDock ? .regular : .accessory)
+        let showInDock = UserDefaults.standard.bool(forKey: "showInDock")
+        if !showInDock {
+            NSApp.setActivationPolicy(.accessory)
         }
     }
 

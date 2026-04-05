@@ -421,7 +421,7 @@ struct SettingsStoreTests {
         settingsStore.selectedFloatingIndicatorType = .pill
         settingsStore.pillFloatingIndicatorOffset = CGSize(width: 36, height: 12)
 
-        settingsStore.selectedFloatingIndicatorType = .bubble
+        settingsStore.selectedFloatingIndicatorType = .notch
 
         #expect(settingsStore.pillFloatingIndicatorOffset.width == 0)
         #expect(settingsStore.pillFloatingIndicatorOffset.height == 0)

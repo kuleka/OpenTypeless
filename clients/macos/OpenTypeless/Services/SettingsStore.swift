@@ -610,7 +610,12 @@ final class SettingsStore: ObservableObject {
 
     var selectedThemeMode: OpenTypelessThemeMode {
        get { OpenTypelessThemeMode(rawValue: themeMode) ?? .system }
-       set { themeMode = newValue.rawValue }
+       set {
+          let raw = newValue.rawValue
+          DispatchQueue.main.async { [weak self] in
+             self?.themeMode = raw
+          }
+       }
     }
 
     var sttMode: STTMode {
@@ -1150,9 +1155,16 @@ final class SettingsStore: ObservableObject {
       objectWillChange.send()
    }
 
+   private var themeRefreshWorkItem: DispatchWorkItem?
+
    private func notifyThemeDidChange() {
       guard !SettingsStoreRuntime.isPreview else { return }
-      OpenTypelessThemeController.shared.refresh()
+      themeRefreshWorkItem?.cancel()
+      let item = DispatchWorkItem {
+         OpenTypelessThemeController.shared.refresh()
+      }
+      themeRefreshWorkItem = item
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.02, execute: item)
    }
 
    func isModelCacheStale(for provider: AIProvider) -> Bool {

@@ -127,9 +127,6 @@ struct UpdateServiceTests {
     @Test func appCoordinatorWiresCheckForUpdatesAction() throws {
         let schema = Schema([
             TranscriptionRecord.self,
-            WordReplacement.self,
-            VocabularyWord.self,
-            PromptPreset.self,
         ])
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let modelContainer = try ModelContainer(for: schema, configurations: [configuration])

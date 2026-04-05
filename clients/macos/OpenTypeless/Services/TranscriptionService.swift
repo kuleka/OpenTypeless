@@ -129,8 +129,9 @@ class TranscriptionService {
         error = nil
 
         let loadStarted = CFAbsoluteTimeGetCurrent()
-        Log.transcription.info("Loading model: \(modelName) with provider: \(provider.rawValue)...")
-        Log.boot.info("TranscriptionService.loadModel begin name=\(modelName) provider=\(provider.rawValue) state=loading")
+        let resolvedProvider = resolvedProviderName(mode: sttMode, provider: provider)
+        Log.transcription.info("Loading model: \(modelName) with provider: \(resolvedProvider)...")
+        Log.boot.info("TranscriptionService.loadModel begin name=\(modelName) provider=\(resolvedProvider) state=loading")
 
         do {
             let newEngine = try makeTranscriptionEngine(for: sttMode, provider: provider)

@@ -48,9 +48,6 @@ struct HistoryStoreTests {
         do {
             let legacyContainer = try ModelContainer(
                 for: TranscriptionRecordSchemaV3.TranscriptionRecord.self,
-                WordReplacement.self,
-                VocabularyWord.self,
-                PromptPreset.self,
                 configurations: configuration
             )
             let legacyContext = ModelContext(legacyContainer)
@@ -69,9 +66,6 @@ struct HistoryStoreTests {
         let migratedContainer = try ModelContainer(
             for: TranscriptionRecord.self,
             MediaFolder.self,
-            WordReplacement.self,
-            VocabularyWord.self,
-            PromptPreset.self,
             configurations: configuration
         )
         let migratedContext = ModelContext(migratedContainer)
@@ -95,9 +89,6 @@ struct HistoryStoreTests {
         do {
             let legacyContainer = try ModelContainer(
                 for: TranscriptionRecordSchemaV4.TranscriptionRecord.self,
-                WordReplacement.self,
-                VocabularyWord.self,
-                PromptPreset.self,
                 configurations: configuration
             )
             let legacyContext = ModelContext(legacyContainer)
@@ -118,9 +109,6 @@ struct HistoryStoreTests {
         let migratedContainer = try ModelContainer(
             for: TranscriptionRecord.self,
             MediaFolder.self,
-            WordReplacement.self,
-            VocabularyWord.self,
-            PromptPreset.self,
             configurations: configuration
         )
         let migratedContext = ModelContext(migratedContainer)
@@ -731,45 +719,6 @@ struct HistoryStoreTests {
         try? FileManager.default.removeItem(at: referenceStoreURL.deletingLastPathComponent())
     }
 
-    @Test func repairServiceRecreatesMissingPromptPresetTableWhenMetadataVersionMatches() throws {
-        try requireSQLiteSupport()
-        let directoryURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let storeURL = directoryURL.appendingPathComponent("missing-prompt-preset.store")
-        let repairService = SwiftDataStoreRepairService()
-
-        let seedContainer = try makeCurrentContainer(at: storeURL)
-        let seedContext = ModelContext(seedContainer)
-        seedContext.insert(
-            TranscriptionRecord(
-                text: "Existing transcription",
-                duration: 2.5,
-                modelUsed: "base"
-            )
-        )
-        try seedContext.save()
-
-        try withDatabase(at: storeURL) { database in
-            try execute("DROP TABLE ZPROMPTPRESET", on: database)
-        }
-
-        #expect(try tableExists(named: "ZPROMPTPRESET", at: storeURL) == false)
-
-        let repairOutcome = try repairService.repairIfNeeded(storeURL: storeURL)
-        #expect(repairOutcome.repaired)
-        #expect(repairOutcome.backupDirectoryURL != nil)
-        #expect(try tableExists(named: "ZPROMPTPRESET", at: storeURL))
-
-        let repairedContainer = try makeCurrentContainer(at: storeURL)
-        let repairedContext = ModelContext(repairedContainer)
-        let records = try repairedContext.fetch(FetchDescriptor<TranscriptionRecord>())
-
-        #expect(records.count == 1)
-        #expect(records.first?.text == "Existing transcription")
-
-        try? FileManager.default.removeItem(at: directoryURL)
-    }
-
     @Test func prepareStoreLocationMigratesRecognizedLegacyStore() throws {
         try requireSQLiteSupport()
         let applicationSupportURL = FileManager.default.temporaryDirectory
@@ -823,23 +772,6 @@ struct HistoryStoreTests {
         #expect(records.first?.folder == nil)
 
         try? FileManager.default.removeItem(at: applicationSupportURL)
-    }
-
-    @Test func currentContainerMigratesLegacyStoreWithoutPromptPresetModel() throws {
-        try requireSQLiteSupport()
-        let directoryURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let storeURL = directoryURL.appendingPathComponent("legacy-no-prompt-preset.store")
-
-        try createV4StoreWithoutPromptPreset(at: storeURL)
-
-        do {
-            _ = try makeCurrentContainer(at: storeURL)
-        } catch {
-            Issue.record("Expected current container migration to succeed, got \(error)")
-        }
-
-        try? FileManager.default.removeItem(at: directoryURL)
     }
 
     @Test func prepareStoreLocationIgnoresUnrecognizedLegacyStore() throws {
@@ -1011,9 +943,6 @@ struct HistoryStoreTests {
             let configuration = ModelConfiguration(url: storeURL)
             let container = try ModelContainer(
                 for: TranscriptionRecordSchemaV1.TranscriptionRecordV1.self,
-                WordReplacement.self,
-                VocabularyWord.self,
-                PromptPreset.self,
                 configurations: configuration
             )
 
@@ -1036,9 +965,6 @@ struct HistoryStoreTests {
             let configuration = ModelConfiguration(url: storeURL)
             let container = try ModelContainer(
                 for: TranscriptionRecordSchemaV3.TranscriptionRecord.self,
-                WordReplacement.self,
-                VocabularyWord.self,
-                PromptPreset.self,
                 configurations: configuration
             )
 
@@ -1064,41 +990,6 @@ struct HistoryStoreTests {
             let configuration = ModelConfiguration(url: storeURL)
             let container = try ModelContainer(
                 for: TranscriptionRecordSchemaV4.TranscriptionRecord.self,
-                WordReplacement.self,
-                VocabularyWord.self,
-                PromptPreset.self,
-                configurations: configuration
-            )
-
-            let context = ModelContext(container)
-            context.insert(
-                TranscriptionRecordSchemaV4.TranscriptionRecord(
-                    text: "Legacy transcription",
-                    originalText: "Legacy transcription",
-                    duration: 4.2,
-                    modelUsed: "base",
-                    enhancedWith: nil,
-                    diarizationSegmentsJSON: nil,
-                    sourceKind: .voiceRecording,
-                    sourceDisplayName: nil,
-                    originalSourceURL: nil,
-                    managedMediaPath: nil,
-                    thumbnailPath: nil
-                )
-            )
-            try context.save()
-        }
-        try flushSQLiteStore(at: storeURL)
-    }
-
-    private func createV4StoreWithoutPromptPreset(at storeURL: URL) throws {
-        try FileManager.default.createDirectory(at: storeURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try autoreleasepool {
-            let configuration = ModelConfiguration(url: storeURL)
-            let container = try ModelContainer(
-                for: TranscriptionRecordSchemaV4.TranscriptionRecord.self,
-                WordReplacement.self,
-                VocabularyWord.self,
                 configurations: configuration
             )
 
@@ -1150,9 +1041,6 @@ struct HistoryStoreTests {
         return try ModelContainer(
             for: TranscriptionRecord.self,
             MediaFolder.self,
-            WordReplacement.self,
-            VocabularyWord.self,
-            PromptPreset.self,
             configurations: configuration
         )
     }

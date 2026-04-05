@@ -501,11 +501,39 @@ final class PillFloatingIndicatorController: NSObject, ObservableObject, NSMenuD
         state.startRecording()
 
         if !isVisible {
-            showIdleIndicator()
-            return
+            showPanel()
         }
 
         refreshLayout(animated: true, duration: 0.24)
+    }
+
+    private func showPanel() {
+        guard let screen = Optional(NSScreen.screenUnderMouse()) else { return }
+
+        let panelState = layoutState
+        let panel = createPanel(contentRect: frame(for: screen, state: panelState))
+
+        let contentView = PillIndicatorView(
+            controller: self,
+            state: self.state,
+            isCompact: false
+        )
+        let hostingView = makeHostingView(for: contentView, size: size(for: panelState))
+        self.hostingView = hostingView
+
+        panel.contentView = hostingView
+        self.panel = panel
+
+        panel.alphaValue = 0
+        panel.orderFrontRegardless()
+        isVisible = true
+        startHoverIntentMonitoring()
+
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.18
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().alphaValue = 1
+        }
     }
 
     func transitionToProcessing() {
@@ -782,7 +810,7 @@ struct PillIndicatorView: View {
                     isRecording: state.isRecording,
                     style: .pill
                 )
-                .frame(width: 46, height: 14)
+                .frame(width: 108, height: 14)
             } else {
                 HStack(spacing: 6) {
                     ProgressView()
