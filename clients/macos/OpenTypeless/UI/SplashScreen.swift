@@ -40,8 +40,9 @@ final class SplashScreenState: ObservableObject {
 // MARK: - Splash Screen View
 
 struct SplashScreen: View {
-    
+
     @ObservedObject var state: SplashScreenState
+    @Environment(\.locale) private var locale
     @State private var isAnimating = false
     
     var body: some View {
@@ -90,7 +91,7 @@ struct SplashScreen: View {
                         .foregroundColor(.primary)
                     
                     // Tagline
-                    Text("Local voice-to-text")
+                    Text(localized("Local voice-to-text", locale: locale))
                         .font(.system(size: 14))
                         .foregroundColor(.secondary)
                 }

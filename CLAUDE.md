@@ -120,6 +120,12 @@ OpenTypeless/
 - [x] AppCoordinator 集成（DI、启动/停止、Re-run Setup）
 - [x] EngineProcessManager 单元测试（6 个测试）
 
+### i18n 补全（中英文）— ✅ 已完成
+
+- [x] 96 个缺失 key 添加到 Localizable.xcstrings（en + zh-Hans）
+- [x] 修复 5 个文件中的硬编码字符串改用 localized()（OnboardingWindow、PillFloatingIndicator、MainWindow、SplashScreen、HotkeysSettingsView）
+- [ ] 其余 9 种语言翻译待社区贡献
+
 ### 待规划
 - [ ] **端到端集成测试** — 启动 Engine + Client 跑完整流程，验证主链路
 - [ ] **Distribution** — Engine + App 打包交付方案（Homebrew / DMG）

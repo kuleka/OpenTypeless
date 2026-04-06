@@ -817,7 +817,7 @@ struct PillIndicatorView: View {
                         .controlSize(.mini)
                         .tint(AppColors.overlayTextPrimary.opacity(0.95))
 
-                    Text("Processing")
+                    Text(localized("Processing", locale: settingsStore.selectedAppLanguage.locale))
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                         .foregroundStyle(AppColors.overlayTextPrimary.opacity(0.9))
                 }

@@ -98,7 +98,7 @@ struct OnboardingWindow: View {
                             Button(action: goBack) {
                                 HStack(spacing: 4) {
                                     IconView(icon: .chevronLeft, size: 14)
-                                    Text("Back")
+                                    Text(localized("Back", locale: settings.selectedAppLanguage.locale))
                                 }
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)

@@ -347,6 +347,7 @@ struct HotkeysSettingsView: View {
 }
 
 struct HotkeyRecorderRow: View {
+    @Environment(\.locale) private var locale
     let hotkey: String
     let isRecording: Bool
     let onRecord: () -> Void
@@ -356,7 +357,7 @@ struct HotkeyRecorderRow: View {
         HStack(spacing: AppTheme.Spacing.md) {
             HStack {
                 if hotkey.isEmpty {
-                    Text("Not set")
+                    Text(localized("Not set", locale: locale))
                         .foregroundStyle(AppColors.textSecondary)
                 } else {
                     Text(hotkey)
@@ -375,14 +376,14 @@ struct HotkeyRecorderRow: View {
             )
 
             Button(action: onRecord) {
-                Text(isRecording ? "Press keys..." : "Record")
+                Text(isRecording ? localized("Press keys...", locale: locale) : localized("Record", locale: locale))
                     .frame(minWidth: 80)
             }
             .buttonStyle(.bordered)
             .tint(isRecording ? AppColors.warning : nil)
 
             if isRecording {
-                Text("Press Esc to cancel")
+                Text(localized("Press Esc to cancel", locale: locale))
                     .font(AppTypography.caption)
                     .foregroundStyle(AppColors.warning)
             }
@@ -393,7 +394,7 @@ struct HotkeyRecorderRow: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(AppColors.textSecondary)
-                .help("Clear hotkey")
+                .help(localized("Clear hotkey", locale: locale))
             }
         }
     }

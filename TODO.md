@@ -25,7 +25,7 @@
 ## P2 — 功能完善
 
 - [ ] **Engine 状态可视化** — 在客户端 UI 显示 Engine 连接状态（online/offline/error）、运行时信息，方便调试
-- [ ] **i18n 补全** — Onboarding 后加的步骤（STTModeStepView、LLMConfigStepView、STTConfigStepView、CompleteStepView）缺少多语言支持
+- [x] **i18n 补全（中英文）** — 96 个缺失 key 添加到 Localizable.xcstrings（en + zh-Hans）；修复 OnboardingWindow、PillFloatingIndicator、MainWindow、SplashScreen、HotkeysSettingsView 中硬编码字符串改用 localized()。其余 9 种语言待社区贡献
 - [ ] **Onboarding UI 修复** — 部分步骤布局/交互问题
 - [ ] **客户端自定义 Engine prompt** — 未来让客户端通过 API 编辑 Engine 的场景 prompt 模板
 

@@ -212,7 +212,7 @@ struct MainWindow: View {
                 .font(AppTypography.title)
                 .foregroundStyle(AppColors.textPrimary)
             
-            Text("Coming Soon")
+            Text(localized("Coming Soon", locale: settingsStore.selectedAppLanguage.locale))
                 .font(AppTypography.body)
                 .foregroundStyle(AppColors.textSecondary)
         }
