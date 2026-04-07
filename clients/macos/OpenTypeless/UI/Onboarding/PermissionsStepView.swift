@@ -126,7 +126,7 @@ struct PermissionsStepView: View {
         guard !accessibilityRequestInFlight else { return }
 
         accessibilityRequestInFlight = true
-        accessibilityGranted = permissionManager.requestAccessibilityPermission(showPrompt: true)
+        _ = permissionManager.requestAccessibilityPermission(showPrompt: true)
 
         Task {
             try? await Task.sleep(for: .seconds(1))

@@ -35,9 +35,14 @@ enum OnboardingStep: Int, CaseIterable {
         }
     }
 
-    /// Steps visible in the dot indicator (sttConfig is conditional, shown inline)
-    static var indicatorSteps: [OnboardingStep] {
-        [.welcome, .permissions, .sttMode, .llmConfig, .hotkeySetup, .complete]
+    /// Steps visible in the dot indicator. sttConfig only appears when sttMode is remote.
+    static func indicatorSteps(sttMode: STTMode) -> [OnboardingStep] {
+        var steps: [OnboardingStep] = [.welcome, .permissions, .sttMode, .llmConfig]
+        if sttMode == .remote {
+            steps.append(.sttConfig)
+        }
+        steps.append(contentsOf: [.hotkeySetup, .complete])
+        return steps
     }
 }
 
@@ -145,10 +150,11 @@ struct OnboardingWindow: View {
 
     private var stepIndicator: some View {
         HStack(spacing: 8) {
-            ForEach(OnboardingStep.indicatorSteps, id: \.rawValue) { step in
+            ForEach(OnboardingStep.indicatorSteps(sttMode: settings.sttMode), id: \.rawValue) { step in
                 stepDot(for: step)
             }
         }
+        .animation(.spring(duration: 0.3), value: settings.sttMode)
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(.ultraThinMaterial, in: .capsule)
@@ -156,7 +162,7 @@ struct OnboardingWindow: View {
 
     @ViewBuilder
     private func stepDot(for step: OnboardingStep) -> some View {
-        let isActive = step == currentStep || (step == .llmConfig && currentStep == .sttConfig)
+        let isActive = step == currentStep
         let isPast = step.rawValue < currentStep.rawValue
 
         Circle()

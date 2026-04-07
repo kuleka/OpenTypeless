@@ -35,7 +35,7 @@ final class OnboardingWindowController {
                 onComplete()
             },
             onPreferredContentSizeChange: { [weak self] size in
-                self?.ensureWindowCanFitContentSize(size)
+                self?.resizeWindowToFitContentSize(size)
             }
         )
         .environment(\.locale, settings.selectedAppLanguage.locale)
@@ -63,7 +63,7 @@ final class OnboardingWindowController {
         Log.boot.info("OnboardingWindowController.showOnboarding: window visible")
     }
 
-    private func ensureWindowCanFitContentSize(_ preferredSize: CGSize) {
+    private func resizeWindowToFitContentSize(_ preferredSize: CGSize) {
         guard let window else { return }
 
         let minimumSize = NSSize(width: 800, height: 600)
@@ -73,14 +73,19 @@ final class OnboardingWindowController {
         )
 
         let currentSize = window.contentLayoutRect.size
-        guard currentSize.width < targetSize.width || currentSize.height < targetSize.height else {
+        guard abs(currentSize.width - targetSize.width) > 1 || abs(currentSize.height - targetSize.height) > 1 else {
             return
         }
 
         var frame = window.frameRect(forContentRect: NSRect(origin: .zero, size: targetSize))
         frame.origin.x = window.frame.midX - (frame.size.width / 2)
         frame.origin.y = window.frame.maxY - frame.size.height
-        window.setFrame(frame, display: true, animate: true)
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.4
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            window.animator().setFrame(frame, display: true)
+        }
     }
 
     func closeOnboarding() {

@@ -495,32 +495,34 @@ struct SettingsStoreTests {
     }
 
     @Test func testEngineRuntimePresentationForOfflineRemoteMode() {
+        let locale = Locale(identifier: "en_US")
         let presentation = EngineRuntimePresentation(
             runtimeState: .offline(detail: "Engine is not reachable at 127.0.0.1:19823."),
             sttMode: .remote,
-            locale: Locale(identifier: "en_US")
+            locale: locale
         )
 
-        #expect(presentation.statusLabel == "Offline")
-        #expect(presentation.detail == "Engine is not reachable at 127.0.0.1:19823.")
-        #expect(presentation.guidance == "Start Engine in another terminal, then press Recheck, or switch Transcription Mode back to Local.")
-        #expect(presentation.recheckTitle == "Reconnect")
+        #expect(presentation.statusLabel == localized("Offline", locale: locale))
+        #expect(presentation.detail == localized("Engine is not reachable at 127.0.0.1:19823.", locale: locale))
+        #expect(presentation.guidance == localized("Start Engine in another terminal, then press Recheck, or switch Transcription Mode back to Local.", locale: locale))
+        #expect(presentation.recheckTitle == localized("Reconnect", locale: locale))
         #expect(presentation.isBusy == false)
     }
 
     @Test func testEngineRuntimePresentationForSetupNeededLocalMode() {
+        let locale = Locale(identifier: "en_US")
         let presentation = EngineRuntimePresentation(
             runtimeState: .needsConfiguration(
                 .llm,
                 detail: "Add an LLM provider base URL, model, and API key to enable Engine polish."
             ),
             sttMode: .local,
-            locale: Locale(identifier: "en_US")
+            locale: locale
         )
 
-        #expect(presentation.statusLabel == "Setup Needed")
-        #expect(presentation.guidance == "Add an LLM provider base URL, model, and API key, then press Recheck.")
-        #expect(presentation.recheckTitle == "Recheck")
+        #expect(presentation.statusLabel == localized("Setup Needed", locale: locale))
+        #expect(presentation.guidance == localized("Add an LLM provider base URL, model, and API key, then press Recheck.", locale: locale))
+        #expect(presentation.recheckTitle == localized("Recheck", locale: locale))
     }
 
     @Test func testResolveMentionFormattingUsesTerminalProviderDefaultTemplate() {

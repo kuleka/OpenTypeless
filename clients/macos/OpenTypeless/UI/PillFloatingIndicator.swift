@@ -739,6 +739,7 @@ final class PillFloatingIndicatorController: NSObject, ObservableObject, NSMenuD
 struct PillIndicatorView: View {
     @ObservedObject var controller: PillFloatingIndicatorController
     @ObservedObject var state: FloatingIndicatorState
+    @Environment(\.locale) private var locale
     let isCompact: Bool
     @Namespace private var pillShellNamespace
 
@@ -817,7 +818,7 @@ struct PillIndicatorView: View {
                         .controlSize(.mini)
                         .tint(AppColors.overlayTextPrimary.opacity(0.95))
 
-                    Text(localized("Processing", locale: settingsStore.selectedAppLanguage.locale))
+                    Text(localized("Processing", locale: locale))
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                         .foregroundStyle(AppColors.overlayTextPrimary.opacity(0.9))
                 }

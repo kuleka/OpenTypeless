@@ -46,7 +46,7 @@ struct CompleteStepView: View {
 
             Spacer()
         }
-        .padding(40)
+        .padding(.horizontal, 40)
         .task {
             await checkEngine()
         }
@@ -177,7 +177,7 @@ struct CompleteStepView: View {
                     IconView(icon: .arrowRight, size: 16)
                 }
                 .font(.headline)
-                .frame(maxWidth: 240)
+                .frame(maxWidth: 200)
                 .padding(.vertical, 14)
             }
             .buttonStyle(.borderedProminent)

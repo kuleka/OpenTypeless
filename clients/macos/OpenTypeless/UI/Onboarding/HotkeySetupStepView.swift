@@ -118,7 +118,7 @@ struct HotkeySetupStepView: View {
             Button(action: onContinue) {
                 Text(localized("Continue", locale: locale))
                     .font(.headline)
-                    .frame(maxWidth: 180)
+                    .frame(maxWidth: 200)
                     .padding(.vertical, 12)
             }
             .buttonStyle(.borderedProminent)

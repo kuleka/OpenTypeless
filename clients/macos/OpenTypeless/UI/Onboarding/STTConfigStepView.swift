@@ -24,8 +24,10 @@ struct STTConfigStepView: View {
 
             providerTabs
 
-            configFields
-                .frame(maxHeight: .infinity)
+            ScrollView(.vertical, showsIndicators: false) {
+                configFields
+            }
+            .frame(maxHeight: .infinity)
 
             actionSection
         }
@@ -176,6 +178,8 @@ struct STTConfigStepView: View {
         let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !trimmedBase.isEmpty, !trimmedModel.isEmpty, !trimmedKey.isEmpty else { return false }
+        guard trimmedBase.hasPrefix("http://") || trimmedBase.hasPrefix("https://"),
+              URL(string: trimmedBase) != nil else { return false }
         return true
     }
 

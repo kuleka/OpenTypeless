@@ -24,8 +24,10 @@ struct LLMConfigStepView: View {
 
             providerTabs
 
-            configFields
-                .frame(maxHeight: .infinity)
+            ScrollView(.vertical, showsIndicators: false) {
+                configFields
+            }
+            .frame(maxHeight: .infinity)
 
             actionSection
         }
@@ -215,6 +217,8 @@ struct LLMConfigStepView: View {
         let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !trimmedBase.isEmpty, !trimmedModel.isEmpty else { return false }
+        guard trimmedBase.hasPrefix("http://") || trimmedBase.hasPrefix("https://"),
+              URL(string: trimmedBase) != nil else { return false }
         if selectedPreset.requiresAPIKey && trimmedKey.isEmpty { return false }
         return true
     }
