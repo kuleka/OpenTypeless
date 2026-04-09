@@ -28,10 +28,13 @@ final class EngineProcessManager: EngineProcessManaging {
         var customBinaryPath: String?
         var host: String
         var port: Int
+        var stubMode: Bool = false
         var healthPollInterval: TimeInterval = 5.0
         var maxRestartsInWindow: Int = 5
         var restartWindowSeconds: TimeInterval = 60.0
         var shutdownGracePeriod: TimeInterval = 5.0
+        var suppressProcessOutput: Bool = false
+        var startupGracePeriod: TimeInterval = 2.0
     }
 
     // MARK: - Dependencies
@@ -44,7 +47,7 @@ final class EngineProcessManager: EngineProcessManaging {
     // MARK: - State
 
     private(set) var isRunning = false
-    private var engineProcess: Process?
+    private(set) var engineProcess: Process?
     private var healthPollTask: Task<Void, Never>?
     private var consecutiveHealthFailures = 0
     private var restartTimestamps: [Date] = []
@@ -107,7 +110,7 @@ final class EngineProcessManager: EngineProcessManaging {
     // MARK: - Binary Discovery
 
     private func resolveEngineBinary() -> (executableURL: URL, arguments: [String])? {
-        // Priority 1: Custom path from settings
+        // Priority 0: Custom path from settings (explicit user override — no fallthrough if set but invalid)
         if let customPath = configuration.customBinaryPath,
            !customPath.isEmpty {
             let url = URL(fileURLWithPath: customPath)
@@ -115,7 +118,15 @@ final class EngineProcessManager: EngineProcessManaging {
                 Log.boot.info("EngineProcessManager: using custom path: \(customPath)")
                 return (url, ["serve", "--port", String(configuration.port)])
             }
-            Log.boot.warning("EngineProcessManager: custom path not executable: \(customPath)")
+            Log.boot.error("EngineProcessManager: custom path not executable: \(customPath)")
+            return nil
+        }
+
+        // Priority 1: Bundled binary in app bundle Resources
+        if let bundledURL = Bundle.main.resourceURL?.appendingPathComponent("engine/open-typeless"),
+           FileManager.default.isExecutableFile(atPath: bundledURL.path) {
+            Log.boot.info("EngineProcessManager: using bundled binary: \(bundledURL.path)")
+            return (bundledURL, ["serve", "--port", String(configuration.port)])
         }
 
         // Priority 2: PATH lookup
@@ -164,22 +175,33 @@ final class EngineProcessManager: EngineProcessManaging {
     // MARK: - Process Management
 
     private func spawnEngine() -> Bool {
-        guard let (executableURL, arguments) = resolveEngineBinary() else {
+        guard let resolved = resolveEngineBinary() else {
             return false
+        }
+
+        let executableURL = resolved.executableURL
+        var arguments = resolved.arguments
+        if configuration.stubMode {
+            arguments.append("--stub")
         }
 
         let process = Process()
         process.executableURL = executableURL
         process.arguments = arguments
 
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
+        if configuration.suppressProcessOutput {
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+        } else {
+            let stdoutPipe = Pipe()
+            let stderrPipe = Pipe()
+            process.standardOutput = stdoutPipe
+            process.standardError = stderrPipe
 
-        // Log stdout/stderr in background
-        readPipeAsync(stdoutPipe, label: "Engine stdout")
-        readPipeAsync(stderrPipe, label: "Engine stderr")
+            // Log stdout/stderr in background
+            readPipeAsync(stdoutPipe, label: "Engine stdout")
+            readPipeAsync(stderrPipe, label: "Engine stderr")
+        }
 
         process.terminationHandler = { [weak self] proc in
             Task { @MainActor [weak self] in
@@ -242,7 +264,7 @@ final class EngineProcessManager: EngineProcessManaging {
 
             // Initial wait for Engine to start up
             if !self.hasEverConnected {
-                try? await Task.sleep(for: .seconds(2))
+                try? await Task.sleep(for: .seconds(self.configuration.startupGracePeriod))
             }
 
             while !Task.isCancelled && self.isRunning {

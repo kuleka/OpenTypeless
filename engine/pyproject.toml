@@ -21,6 +21,7 @@ open-typeless = "open_typeless.cli:main"
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
+    "pyinstaller>=6.0",
 ]
 
 [build-system]

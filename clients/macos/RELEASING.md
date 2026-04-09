@@ -1,12 +1,12 @@
 # Releasing the OpenTypeless macOS Client
 
-This document describes the inherited Sparkle-based release process for the OpenTypeless macOS client.
+This document describes the release process for the OpenTypeless macOS client.
 
-The Xcode target, app bundle, and some distribution artifacts are still named `OpenTypeless`. Treat those names as current implementation details inside this repo.
+OpenTypeless is distributed as an **ad-hoc signed** app (no paid Apple Developer account). Users must right-click → Open on first launch to bypass Gatekeeper. Subsequent updates via Sparkle work automatically.
 
-## EdDSA Signing Keys
+## Sparkle EdDSA Signing Keys
 
-The current macOS client target uses [Sparkle](https://sparkle-project.org/) for automatic updates. Updates are signed using EdDSA (Ed25519) for security.
+Updates are verified using [Sparkle](https://sparkle-project.org/)'s EdDSA (Ed25519) signatures. This is independent of Apple codesigning — it works with ad-hoc signed builds.
 
 ### Key Storage
 
@@ -19,13 +19,6 @@ The current macOS client target uses [Sparkle](https://sparkle-project.org/) for
 
 ```
 TCU0MwULuIK6y0ubIossVr+61PGh/wHZfFrRFc9F2Is=
-```
-
-This key is currently configured in `OpenTypeless/Info.plist`:
-
-```xml
-<key>SUPublicEDKey</key>
-<string>TCU0MwULuIK6y0ubIossVr+61PGh/wHZfFrRFc9F2Is=</string>
 ```
 
 ### Generating New Keys (if needed)
@@ -54,129 +47,117 @@ If you need to regenerate the signing keys (e.g., if the private key is lost):
    <string>YOUR_NEW_PUBLIC_KEY_HERE</string>
    ```
 
-5. **CRITICAL**: Users with older versions will NOT be able to update to versions signed with the new key. This should only be done for major releases or security incidents.
+5. **CRITICAL**: Users with older versions will NOT be able to auto-update to versions signed with the new key. They must manually download the new version.
 
 ## Release Process
 
 ### Prerequisites
 
-- macOS development machine with the private key in Keychain
+- macOS with the Sparkle EdDSA private key in Keychain
 - Xcode installed
 - `just` command runner: `brew install just`
+- `create-dmg`: `brew install create-dmg`
+- `gh` (GitHub CLI): `brew install gh` + `gh auth login`
 
-### Steps
+### Quick Release
 
-1. **Update version numbers** in Xcode project settings
-
-2. **Build and sign the release**:
 ```bash
-just release
+cd clients/macos
+
+# 1. Write release notes (creates draft if missing)
+just release-notes 1.0.0
+
+# 2. Edit release-notes/v1.0.0.md — remove all TODO markers
+
+# 3. Run the full release pipeline
+just release 1.0.0
 ```
+
 This will:
-- Clean build artifacts
-- Build the release version
-- Sign the app with your Developer ID
-- Create a DMG in `dist/OpenTypeless.dmg`
-- Notarize the DMG with Apple
-- Staple the notarization ticket to the DMG
-- Generate `appcast.xml` from the final stapled DMG
+- Bump version number in Xcode project
+- Run tests
+- Build a Release configuration, ad-hoc sign the app bundle
+- Create a DMG
+- Generate `appcast.xml` with Sparkle EdDSA signature
+- Create a git tag and push it
+- Create a GitHub Release with DMG + appcast attached
 
-3. **Upload the release**:
-- Upload `dist/OpenTypeless.dmg` to GitHub Releases
-- Upload `appcast.xml` as a GitHub Release asset (or host it at your feed URL)
+### Gatekeeper and Ad-hoc Signing
 
-4. **Tag the release**:
-```bash
-git tag -a v1.0.0 -m "Release version 1.0.0"
-git push origin v1.0.0
-```
+Since we don't use a paid Apple Developer account:
 
-## Appcast Generation Workflow
+- The app is signed with an **ad-hoc identity** (`-`), which satisfies macOS code integrity checks but not Gatekeeper's notarization requirement
+- On first launch, users will see "macOS cannot verify the developer of this app"
+- **Workaround**: Right-click the app → Open → click "Open" in the dialog
+- After the first launch, macOS remembers the choice and won't ask again
+- Sparkle updates bypass this entirely — once the app is trusted, updates install silently
 
-The `just appcast` command automates the appcast generation process:
+### If You Later Get a Developer Account
 
-### What It Does
+If you obtain a paid Apple Developer Program membership:
 
-1. **Validates the DMG** exists at the specified path
-2. **Downloads Sparkle tools** (if not already present):
-   - Downloads Sparkle 2.6.4 release
-   - Extracts `generate_appcast` and `sign_update` to `bin/`
-3. **Generates the appcast**:
-   - Copies DMG to a temporary directory
-   - Runs `generate_appcast` to create signatures
-   - Outputs `appcast.xml` in the project root
+1. Change `CODE_SIGN_IDENTITY` in the Xcode project to `Developer ID Application`
+2. Set up `xcrun notarytool` credentials
+3. In the justfile, replace `just dmg-self-signed` with `just dmg` in the `release` recipe
+4. Add back the notarize/staple steps:
 
-### Usage
-
-```bash
-# Generate appcast for the default DMG location
-just appcast dist/OpenTypeless.dmg
-
-# The appcast.xml will be created in the current directory
-```
-
-### Appcast Structure
-
-The generated `appcast.xml` follows Sparkle's RSS format:
-
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
-  <channel>
-    <title>OpenTypeless Updates</title>
-    <item>
-      <title>Version 1.0.0</title>
-      <sparkle:version>100</sparkle:version>
-      <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
-      <enclosure url="..."
-                 sparkle:edSignature="SIGNATURE"
-                 length="SIZE"
-                 type="application/octet-stream"/>
-    </item>
-  </channel>
-</rss>
-```
-
-### Manual Appcast Updates
-
-If you need to manually edit `appcast.xml`:
-
-1. Use a generated appcast file as a starting point
-2. Update version numbers, release notes, and download URL
-3. Generate the EdDSA signature using:
    ```bash
-   ./bin/sign_update /path/to/OpenTypeless.dmg
+   just notarize "${DMG_PATH}"
+   just staple "${DMG_PATH}"
    ```
-4. Add the signature to the `<enclosure>` element
 
-### Hosting the Appcast
+## Appcast Generation
 
-The appcast can be hosted:
-- **GitHub Pages**: Commit `appcast.xml` to `gh-pages` branch
-- **GitHub Releases**: Upload as a release asset
-- **Custom server**: Any HTTPS URL accessible to users
+The `just appcast` command automates appcast generation:
 
-Update `SUFeedURL` in `OpenTypeless/Info.plist` to point to your hosted appcast.
+1. Validates the DMG exists
+2. Downloads Sparkle tools if not present (`bin/generate_appcast`, `bin/sign_update`)
+3. Signs the DMG with the EdDSA key from Keychain
+4. Generates `appcast.xml` with download URLs pointing to GitHub Releases
+
+### Appcast Hosting
+
+The appcast is configured to be served from GitHub Releases:
+
+```text
+SUFeedURL = https://github.com/kuleka/OpenTypeless/releases/latest/download/appcast.xml
+```
+
+Each `just release` run uploads `appcast.xml` as a release asset. Sparkle fetches it from the `latest` release permalink.
+
+### Manual Appcast Generation
+
+```bash
+just appcast dist/OpenTypeless.dmg
+```
 
 ## Security Notes
 
-- Never share the private key
-- Never commit the private key to version control
-- The private key is tied to your Mac's Keychain and cannot be exported easily
-- If you lose the private key, you will need to generate new keys and users will need to manually download updates
+- The Sparkle EdDSA private key is tied to your Mac's Keychain and cannot be exported easily
+- Never share or commit the private key
+- If you lose the private key, generate new keys — existing users must manually download the next update
+- Ad-hoc signing still provides code integrity protection (tampering detection), just not identity verification
 
 ## Troubleshooting
 
 ### "Update is improperly signed" error
 
-This means the update was signed with a different key than what's in the app's `Info.plist`. Ensure:
+The update was signed with a different EdDSA key than what's in the app's `Info.plist`. Ensure:
+
 1. You're using the correct private key (check Keychain)
 2. The public key in `Info.plist` matches the private key used for signing
 
 ### Lost private key
 
-If you've lost the private key:
 1. Generate new keys using `generate_keys`
 2. Update `Info.plist` with the new public key
 3. Notify users they'll need to manually download the update
 4. Future updates will work normally with the new key
+
+### "macOS cannot verify the developer" on first launch
+
+This is expected for ad-hoc signed apps. Users should:
+
+1. Right-click the app → Open
+2. Click "Open" in the Gatekeeper dialog
+3. Alternatively: `xattr -cr /Applications/OpenTypeless.app`

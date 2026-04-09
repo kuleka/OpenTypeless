@@ -52,8 +52,19 @@ struct EngineProcessManagerTests {
 
     @Test func statusChangeCallbackFires() async {
         var receivedStates: [EngineRuntimeState.Phase] = []
-        let sut = makeManager(
-            healthCheck: { throw EngineClientError.connectionFailed }
+        let sut = EngineProcessManager(
+            configuration: .init(
+                customBinaryPath: "/nonexistent/binary",
+                host: "127.0.0.1",
+                port: 19823,
+                healthPollInterval: 0.1,
+                maxRestartsInWindow: 3,
+                restartWindowSeconds: 5.0,
+                shutdownGracePeriod: 1.0
+            ),
+            healthCheck: { throw EngineClientError.connectionFailed },
+            pushConfig: { _ in ConfigStatusResponse(status: "configured") },
+            configProvider: { nil }
         )
         sut.onStatusChange = { state in
             receivedStates.append(state.phase)

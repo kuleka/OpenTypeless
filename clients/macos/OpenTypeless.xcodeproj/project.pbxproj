@@ -644,6 +644,7 @@ FLOATSHAREDFILE01A2B3C4D5E6F /* FloatingIndicatorShared.swift */,
 				6E3989E80A1A4BF5BEC7A015 /* Sources */,
 				37A010B78338464E90A60BD4 /* Frameworks */,
 				C9D46B9D12B748D9BBCFE2A3 /* Resources */,
+				ENGCOPY01A2B3C4D5E6F7A8B9 /* Copy Bundled Engine */,
 			);
 			buildRules = (
 			);
@@ -773,6 +774,23 @@ FLOATSHAREDFILE01A2B3C4D5E6F /* FloatingIndicatorShared.swift */,
 			);
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		ENGCOPY01A2B3C4D5E6F7A8B9 /* Copy Bundled Engine */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Copy Bundled Engine";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "ENGINE_SRC=\"${SRCROOT}/../../engine/dist/open-typeless\"\nENGINE_DST=\"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Resources/engine\"\n\nif [ -f \"$ENGINE_SRC\" ]; then\n    mkdir -p \"$ENGINE_DST\"\n    cp -f \"$ENGINE_SRC\" \"$ENGINE_DST/open-typeless\"\n    chmod +x \"$ENGINE_DST/open-typeless\"\n    echo \"Copied bundled Engine binary to $ENGINE_DST\"\nelse\n    echo \"warning: Engine binary not found at $ENGINE_SRC — skipping (run scripts/build-engine.sh first)\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		572D6581DD0541D98D9191B2 /* Sources */ = {
@@ -1023,7 +1041,7 @@ FLOATSHAREDFILE01A2B3C4D5E6F /* FloatingIndicatorShared.swift */,
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -1097,7 +1115,7 @@ FLOATSHAREDFILE01A2B3C4D5E6F /* FloatingIndicatorShared.swift */,
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;

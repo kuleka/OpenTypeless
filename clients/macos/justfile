@@ -248,29 +248,30 @@ release-local: clean dmg
 	@echo "  2. Notarize: just notarize {{dmg_dir}}/{{app_name}}.dmg"
 	@echo "  3. Staple: just staple {{dmg_dir}}/{{app_name}}.dmg"
 
-# Manual GitHub release workflow
+# Manual GitHub release workflow (no paid Apple Developer account required)
 # Usage: just release 1.9.0
-# Runs locally: tests -> signed DMG -> notarize/staple -> appcast -> release notes -> tag -> push tag -> gh release create
+# Runs locally: tests -> self-signed DMG -> appcast -> release notes -> tag -> push tag -> gh release create
+# Note: DMG is ad-hoc signed. Users must right-click -> Open on first launch to bypass Gatekeeper.
 release version:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	
+
 	VERSION="{{version}}"
 	TAG="v${VERSION}"
 	DMG_PATH="{{dmg_dir}}/{{app_name}}.dmg"
 	APPCAST_PATH="appcast.xml"
 	NOTES_PATH="release-notes/${TAG}.md"
-	
+
 	# Validate version format (X.Y.Z)
 	if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 		echo "❌ Invalid version format: $VERSION"
 		echo "   Expected format: X.Y.Z (e.g., 1.9.0)"
 		exit 1
 	fi
-	
-	echo "🚀 Releasing OpenTypeless ${TAG}"
+
+	echo "🚀 Releasing OpenTypeless ${TAG} (ad-hoc signed)"
 	echo ""
-	
+
 	# Check for uncommitted changes
 	if ! git diff --quiet || ! git diff --cached --quiet; then
 		echo "❌ You have uncommitted changes. Please commit or stash them first."
@@ -311,7 +312,7 @@ release version:
 		echo "   Please finalize notes before releasing."
 		exit 1
 	fi
-	
+
 	# Get current version
 	CURRENT_VERSION=$(grep 'MARKETING_VERSION = ' OpenTypeless.xcodeproj/project.pbxproj | head -1 | sed 's/.*= \(.*\);/\1/')
 	CURRENT_BUILD=$(grep 'CURRENT_PROJECT_VERSION = ' OpenTypeless.xcodeproj/project.pbxproj | head -1 | sed 's/.*= \(.*\);/\1/')
@@ -326,12 +327,12 @@ release version:
 		NEXT_BUILD=$((CURRENT_BUILD + 1))
 		echo "📋 New build: ${NEXT_BUILD}"
 		echo ""
-		
+
 		# Update MARKETING_VERSION and CURRENT_PROJECT_VERSION in project.pbxproj
 		echo "📝 Updating version and build number in Xcode project..."
 		sed -i '' "s/MARKETING_VERSION = ${CURRENT_VERSION};/MARKETING_VERSION = ${VERSION};/g" OpenTypeless.xcodeproj/project.pbxproj
 		sed -i '' "s/CURRENT_PROJECT_VERSION = ${CURRENT_BUILD};/CURRENT_PROJECT_VERSION = ${NEXT_BUILD};/g" OpenTypeless.xcodeproj/project.pbxproj
-		
+
 		# Verify the changes
 		NEW_VERSION=$(grep 'MARKETING_VERSION = ' OpenTypeless.xcodeproj/project.pbxproj | head -1 | sed 's/.*= \(.*\);/\1/')
 		NEW_BUILD=$(grep 'CURRENT_PROJECT_VERSION = ' OpenTypeless.xcodeproj/project.pbxproj | head -1 | sed 's/.*= \(.*\);/\1/')
@@ -344,7 +345,7 @@ release version:
 			exit 1
 		fi
 		echo "✅ Version updated to ${VERSION} (build ${NEXT_BUILD})"
-		
+
 		# Commit the version bump
 		echo "📦 Committing version bump..."
 		git add OpenTypeless.xcodeproj/project.pbxproj
@@ -355,32 +356,26 @@ release version:
 	echo "🧪 Running test suite..."
 	just test
 
-	# Step 2: Build signed release DMG
-	echo "📦 Building signed release DMG..."
-	just dmg
+	# Step 2: Build self-signed release DMG (ad-hoc, no Developer ID needed)
+	echo "📦 Building self-signed release DMG..."
+	just dmg-self-signed
 
-	# Step 3: Notarize and staple the DMG before publishing or generating appcast
-	echo "📝 Notarizing release DMG..."
-	just notarize "${DMG_PATH}"
-	echo "📎 Stapling notarization ticket..."
-	just staple "${DMG_PATH}"
-
-	# Step 4: Update appcast using the final stapled DMG bytes
+	# Step 3: Generate appcast (Sparkle EdDSA signing, independent of Apple codesign)
 	echo "📡 Generating appcast.xml..."
 	just appcast "${DMG_PATH}"
 
-	# Step 5: Validate release notes
+	# Step 4: Validate release notes
 	echo "📝 Using release notes: ${NOTES_PATH}"
-	
-	# Step 6: Create annotated tag (if needed)
+
+	# Step 5: Create annotated tag (if needed)
 	if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null 2>&1; then
 		echo "ℹ️  Tag already exists locally: ${TAG}"
 	else
 		echo "🏷️  Creating tag ${TAG}..."
 		git tag -a "${TAG}" -m "Release ${TAG}"
 	fi
-	
-	# Step 7: Push tag (if needed)
+
+	# Step 6: Push tag (if needed)
 	if git ls-remote --exit-code --tags origin "${TAG}" >/dev/null 2>&1; then
 		echo "ℹ️  Tag already exists on origin: ${TAG}"
 	else
@@ -388,20 +383,23 @@ release version:
 		git push origin "${TAG}"
 	fi
 
-	# Step 8: Create GitHub release and attach assets
+	# Step 7: Create GitHub release and attach assets
 	echo "📤 Creating GitHub release with DMG + appcast + notes..."
 	gh release create "${TAG}" "${DMG_PATH}" "${APPCAST_PATH}" \
 		--title "OpenTypeless ${TAG}" \
 		--notes-file "${NOTES_PATH}"
-	
+
 	echo ""
-	echo "✅ Release ${TAG} published!"
+	echo "✅ Release ${TAG} published! (ad-hoc signed)"
 	echo ""
 	echo "📋 Uploaded assets:"
 	echo "  - ${DMG_PATH}"
 	echo "  - ${APPCAST_PATH}"
 	echo "📝 Release notes:"
 	echo "  - ${NOTES_PATH}"
+	echo ""
+	echo "⚠️  Users must right-click -> Open on first launch (Gatekeeper bypass)."
+	echo "   Subsequent Sparkle updates work automatically."
 	echo ""
 	echo "ℹ️  Optional follow-up: push main when you're ready."
 
