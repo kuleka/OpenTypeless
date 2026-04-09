@@ -126,9 +126,26 @@ OpenTypeless/
 - [x] 修复 5 个文件中的硬编码字符串改用 localized()（OnboardingWindow、PillFloatingIndicator、MainWindow、SplashScreen、HotkeysSettingsView）
 - [ ] 其余 9 种语言翻译待社区贡献
 
+### Onboarding UI 修复 — ✅ 已完成
+
+- [x] 窗口双向缩放（涨+缩），NSAnimationContext 0.4s 动画同步
+- [x] LLMConfigStepView / STTConfigStepView 配置表单包裹 ScrollView
+- [x] 步骤指示器动态 dot（sttConfig 在 remote 模式下独立显示）
+- [x] API Base URL 格式校验（http/https 前缀 + URL 可解析）
+- [x] 权限检查防闪烁（异步复查后统一赋值）
+- [x] 按钮宽度统一 200px、CompleteStepView padding 对称修复
+
+### Distribution（Engine 打包）— 🚧 进行中
+
+- [x] PyInstaller 打包 Engine 为独立二进制（arm64，~17MB）
+- [x] `scripts/build-engine.sh` 构建脚本
+- [x] EngineProcessManager Priority 0：bundled binary（`Bundle.main.resourceURL/engine/open-typeless`）
+- [x] Xcode Run Script Build Phase：自动复制 `engine/dist/open-typeless` 到 app bundle `Contents/Resources/engine/`
+- [ ] DMG / Homebrew 分发（待规划）
+
 ### 待规划
+
 - [ ] **端到端集成测试** — 启动 Engine + Client 跑完整流程，验证主链路
-- [ ] **Distribution** — Engine + App 打包交付方案（Homebrew / DMG）
 - [ ] **Custom Context Rules** — 用户自定义场景规则和 prompt 模板
 
 ## 开发指引
@@ -140,7 +157,14 @@ OpenTypeless/
 - 运行测试：`cd engine && .venv/bin/python -m pytest tests/ -v`
 - 启动服务：`cd engine && .venv/bin/python -m open_typeless.cli serve`
 
+### Engine 打包（Distribution 构建）
+- 构建独立二进制：`scripts/build-engine.sh`（需要 engine/.venv 已创建）
+- 输出：`engine/dist/open-typeless`（arm64，~17MB）
+- Xcode build 时会自动复制到 app bundle（如 `engine/dist/open-typeless` 存在）
+- 不构建时 app 会 fallback 到 venv/PATH（开发模式正常工作）
+
 ### Client 开发
+
 - 代码在 `clients/macos/OpenTypeless/`
 - 用 Xcode 打开 `clients/macos/OpenTypeless.xcodeproj`
 
@@ -176,7 +200,7 @@ OpenTypeless/
 App 启动 → AppCoordinator.start()
 ├─ Onboarding 未完成 → Task { engineProcessManager.start() }（非阻塞）→ showOnboarding()
 └─ 正常启动 → await engineProcessManager.start()（⚠️ 必须 await，否则后续 POST /config 会失败）
-    → spawnEngine()（3 级 fallback 发现 binary，仅传 --port，不传 --host）
+    → spawnEngine()（4 级 fallback 发现 binary：bundled → custom → PATH → venv，仅传 --port，不传 --host）
     → startHealthPolling()（每 5 秒）
     → 首次 healthy → pushConfig()（POST /config 推送 LLM/STT 密钥）
     → ready → startNormalOperation()

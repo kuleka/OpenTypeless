@@ -26,7 +26,7 @@
 
 - [x] **Engine 状态可视化** — 设置页 Engine 连接卡片（状态圆点 + stats + 指导信息）、状态栏菜单 Engine 状态项、EngineRuntimeState 6 种状态、/health enrichment（uptime/stats）
 - [x] **i18n 补全（中英文）** — 96 个缺失 key 添加到 Localizable.xcstrings（en + zh-Hans）；修复 OnboardingWindow、PillFloatingIndicator、MainWindow、SplashScreen、HotkeysSettingsView 中硬编码字符串改用 localized()。其余 9 种语言待社区贡献
-- [ ] **Onboarding UI 修复** — 部分步骤布局/交互问题
+- [x] **Onboarding UI 修复** — 窗口双向缩放、配置表单 ScrollView、步骤指示器动态 dot、URL 格式校验、权限检查防闪烁、按钮宽度/间距统一
 - [ ] **客户端自定义 Engine prompt** — 未来让客户端通过 API 编辑 Engine 的场景 prompt 模板
 
 ## P3 — 大方向
